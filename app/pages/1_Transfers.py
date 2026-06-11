@@ -43,9 +43,10 @@ players  = load_csv("players.csv")
 fixtures = load_csv("fixtures.csv")
 groups   = load_csv("groups.csv")
 lineups  = load_csv("lineups.csv")
+form     = load_csv("form.csv")
 
 with st.spinner("Calculating…"):
-    result = recommend_best_squad(players, fixtures, groups, lineups)
+    result = recommend_best_squad(players, fixtures, groups, lineups, form=form)
 
 if result is None:
     st.warning("Not enough data. Check the **Data** page.")
@@ -64,7 +65,7 @@ st.caption(
     "Mid-round transfers are also valid but cost the same 1 transfer each."
 )
 
-schedule = get_transfer_schedule(squad, enriched, fixtures, groups, used, today)
+schedule = get_transfer_schedule(squad, enriched, fixtures, groups, used, today, form=form)
 
 if not schedule:
     st.info("No upcoming rounds found.")
@@ -141,7 +142,7 @@ pos_filter = ca.radio("Position", ["All", "GK", "DEF", "MID", "FWD"], horizontal
 n = cb.slider("Suggestions per side", 3, 10, 5)
 
 pf = None if pos_filter == "All" else pos_filter
-transfers = recommend_transfers(squad, enriched, fixtures, groups, n_suggestions=n, position_filter=pf)
+transfers = recommend_transfers(squad, enriched, fixtures, groups, n_suggestions=n, position_filter=pf, form=form)
 
 col_out, col_in = st.columns(2)
 

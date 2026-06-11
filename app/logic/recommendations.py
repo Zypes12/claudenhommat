@@ -12,6 +12,14 @@ Scoring rules (from futisporssi.fi/ohjeet):
        shots_on_target: 1-2→+1, 3-4→+2, 5-6→+3, 7-8→+4, 9+→+5
        victory_goal +2, equalizer +1
   Captain: ×1.3 (positive rounds up, negative rounds down)
+
+Strategy rules baked into scoring (Finnish Futispörssi community guidelines):
+  1. Defensive MIDs penalised: no set-piece/penalty role → 30% lower goal rate.
+  2. Goal rates scale with opponent weakness (FIFA rank) AND team attacking form.
+  3. Knockout fixtures: CS probability boosted 25%; goal factor reduced 15%.
+  4. Transfer rule: never recommend transferring out a player who plays within 2 days.
+  5. Transfer focus: FWD/attacking MID upgrades prioritised over DEF/GK swaps.
+  6. Transfer up in value: small preference for expensive in-players (budget maximisation).
 """
 from __future__ import annotations
 import math
@@ -35,6 +43,11 @@ MAX_TRANSFERS = 35
 VALID_FORMATIONS = ["4-4-2", "4-3-3", "4-5-1", "3-5-2", "3-4-3", "5-3-2", "5-4-1"]
 
 POS_COLORS = {"GK": "#f59e0b", "DEF": "#22c55e", "MID": "#3b82f6", "FWD": "#ef4444"}
+
+# Goals per game at the position level vs an average opponent (FIFA rank ~50).
+# FWD ~0.25, attacking MID ~0.08; GK almost never scores.
+BASE_GOAL_RATE = {"GK": 0.01, "DEF": 0.04, "MID": 0.08, "FWD": 0.25}
+ASSIST_PER_GOAL = 0.40  # assists credited per goal scored by the same player
 
 
 # ── Value parsing ──────────────────────────────────────────────────────────────
@@ -103,13 +116,13 @@ def _enrich_with_team(players: pd.DataFrame, lineups: pd.DataFrame) -> pd.DataFr
         if norm_player in lineup_map:
             return lineup_map[norm_player]
 
-        # 2. Last name only (players.csv stores "LastName FirstName")
-        #    This is the reliable path — avoids matching first names like "David"
-        #    against unrelated players (e.g. Jonathan David for Canada).
+        # 2. Last-name-only (players.csv stores "LastName FirstName")
+        #    Avoids first-name collisions (e.g. "David" matching Jonathan David/Canada
+        #    for Raum/Alaba).
         if parts and parts[0] in lineup_map:
             return lineup_map[parts[0]]
 
-        # 3. Two-word compound last name (e.g. "De Bruyne", "Van Dijk")
+        # 3. Compound last name (e.g. "De Bruyne", "Van Dijk")
         if len(parts) >= 2:
             compound = parts[0] + " " + parts[1]
             if compound in lineup_map:
@@ -144,7 +157,9 @@ def _result_probs(team_rank: float, opp_rank: float) -> tuple[float, float, floa
     return win, draw, loss
 
 
-def fixture_difficulty(team: str, fixtures: pd.DataFrame, groups: pd.DataFrame, next_n: int = 3) -> float:
+def fixture_difficulty(
+    team: str, fixtures: pd.DataFrame, groups: pd.DataFrame, next_n: int = 3
+) -> float:
     """Average opponent FIFA ranking across next N unplayed fixtures. Higher = easier."""
     if fixtures.empty or groups.empty or not team:
         return 50.0
@@ -166,6 +181,38 @@ def fixture_difficulty(team: str, fixtures: pd.DataFrame, groups: pd.DataFrame, 
     return round(sum(scores) / len(scores), 1)
 
 
+# ── Attacking form helpers ─────────────────────────────────────────────────────
+
+def _opp_goal_factor(opp_rank: float) -> float:
+    """
+    Scoring ease multiplier based on opponent FIFA rank.
+    Rank 50 (average) → 1.0; rank 10 (elite) → 0.2; rank 100 (weak) → 2.0.
+    """
+    return min(2.0, max(0.2, opp_rank / 50.0))
+
+
+def get_team_attack_rate(team: str, form: "pd.DataFrame | None") -> float:
+    """
+    Goals per game from qualifying form, normalised so 1.8 gpg → factor 1.0.
+    Returns factor in [0.5, 1.8]; falls back to 1.0 (neutral) when no data.
+    """
+    if form is None or (hasattr(form, "empty") and form.empty) or not team:
+        return 1.0
+    norm_team = team.strip().lower()
+    row = form[form["team"].astype(str).str.strip().str.lower() == norm_team]
+    if row.empty:
+        return 1.0
+    try:
+        p = float(row.iloc[0]["p"]) if row.iloc[0]["p"] else 0
+        f = float(row.iloc[0]["f"]) if row.iloc[0]["f"] else 0
+        if p > 0:
+            gpg = f / p
+            return min(1.8, max(0.5, gpg / 1.8))
+    except (ValueError, TypeError):
+        pass
+    return 1.0
+
+
 # ── Expected points estimation ─────────────────────────────────────────────────
 
 def expected_matchday_points(
@@ -173,7 +220,22 @@ def expected_matchday_points(
     fixtures: pd.DataFrame,
     groups: pd.DataFrame,
     next_n: int = 3,
+    form: "pd.DataFrame | None" = None,
 ) -> float:
+    """
+    Estimate expected Futispörssi points per game over the next N fixtures.
+
+    Components:
+      - Appearance (2 pts)
+      - Result bonus (win/draw/loss by position)
+      - Clean sheet probability × CS points
+      - GK saves flat estimate
+      - DEF goals-against penalty
+      - Penalty taker bonus
+      - Set-piece role bonus
+      - Goal/assist contribution: BASE_GOAL_RATE × opponent_factor × team_attack_factor
+        (DEF defensive MID 30% penalty applied to goal rate)
+    """
     pos = str(player.get("position", "")).strip().upper()
     if pos not in POSITION_POINTS:
         pos = "MID"
@@ -191,9 +253,26 @@ def expected_matchday_points(
     ].head(next_n)
 
     if team_fx.empty or not team:
-        # No team data — neutral base estimate
+        # No team info — neutral fallback
         return round(2.5 + (1.0 if pos in ("GK", "DEF") else 0.5), 2)
 
+    # ── Player attributes ─────────────────────────────────────────────────────
+    spr = str(player.get("set_piece_role", "")).strip().lower()
+    pt  = str(player.get("penalty_taker", "")).strip().lower()
+    is_pen_taker = pt in ("primary", "secondary")
+    pen_primary  = pt == "primary"
+    has_sp_role  = spr not in ("no", "none", "")
+
+    # Base goal rate; apply 30% penalty for likely defensive midfielders
+    # (no set-piece role and not a penalty taker → probably a DM/CM without goal threat)
+    base_goal_rate = BASE_GOAL_RATE.get(pos, 0.08)
+    if pos == "MID" and not has_sp_role and not is_pen_taker:
+        base_goal_rate *= 0.70
+
+    # Team attack strength from qualifying form (neutral = 1.0)
+    attack_factor = get_team_attack_rate(team, form)
+
+    # ── Per-fixture loop ──────────────────────────────────────────────────────
     total_pts = 0.0
     for _, row in team_fx.iterrows():
         opp = row["away_team"] if str(row["home_team"]).strip() == team else row["home_team"]
@@ -201,15 +280,26 @@ def expected_matchday_points(
         opp_rank  = get_team_ranking(str(opp).strip(), groups)
         win_p, draw_p, loss_p = _result_probs(team_rank, opp_rank)
 
+        # Knockout fixtures: tighter games → higher CS, fewer goals scored
+        stage = str(row.get("stage", "")).strip().lower()
+        is_knockout = bool(stage and "group" not in stage and "matchday" not in stage)
+
         pts = 2.0  # appearance + 60 min
+
+        # Result bonus
         pts += win_p * pp["win"] + draw_p * pp["draw"] + loss_p * pp["loss"]
 
+        # Clean sheet probability
         cs_prob = win_p * 0.60 + draw_p * 0.20
+        if is_knockout:
+            cs_prob = min(0.75, cs_prob * 1.25)  # knockout games are tighter
         pts += cs_prob * pp["clean_sheet"]
 
+        # GK saves (flat estimate based on typical WC save counts)
         if pos == "GK":
             pts += 1.5
 
+        # DEF goals-against penalty
         if pos == "DEF":
             expected_ga = loss_p * 2.5 + draw_p * 0.5
             if expected_ga < 2:
@@ -219,20 +309,24 @@ def expected_matchday_points(
             else:
                 pts -= 1.5
 
-        is_pen_taker = str(player.get("penalty_taker", "")).strip().lower() in ("primary", "secondary")
-        pen_primary  = str(player.get("penalty_taker", "")).strip().lower() == "primary"
+        # Penalty taker bonus
         if is_pen_taker:
             pen_rate = 0.4 if pen_primary else 0.2
             pts += pen_rate * (0.80 * (pp["goal"] - 2) + 0.20 * -2)
 
-        spr = str(player.get("set_piece_role", "")).strip().lower()
+        # Set-piece role bonus
         if spr in ("both", "free kicks"):
             pts += 0.3 * pp["assist"]
         if spr in ("both", "corners"):
             pts += 0.2 * pp["assist"]
 
-        if pos in ("MID", "FWD"):
-            pts += (opp_rank / 100) * 0.5
+        # Goal/assist contribution: base rate × opponent weakness × team attack
+        opp_factor = _opp_goal_factor(opp_rank)
+        if is_knockout:
+            opp_factor *= 0.85  # fewer goals in knockout games
+        exp_goals = base_goal_rate * opp_factor * attack_factor
+        pts += exp_goals * pp["goal"]
+        pts += exp_goals * ASSIST_PER_GOAL * pp["assist"]
 
         total_pts += pts
 
@@ -241,7 +335,7 @@ def expected_matchday_points(
 
 # ── Squad optimizer ────────────────────────────────────────────────────────────
 
-MIN_PLAYER_VALUE = 275_000  # used for budget reservation
+MIN_PLAYER_VALUE = 275_000  # reserved per remaining slot when picking
 
 
 def _pick_for_formation(
@@ -256,7 +350,6 @@ def _pick_for_formation(
 
     for pos, count in slots:
         slots_remaining -= count
-        # Reserve minimum value for remaining positions
         reserve = slots_remaining * MIN_PLAYER_VALUE
         pos_budget = budget - reserve
 
@@ -287,17 +380,19 @@ def recommend_best_squad(
     fixtures: pd.DataFrame,
     groups: pd.DataFrame,
     lineups: pd.DataFrame,
+    form: "pd.DataFrame | None" = None,
 ) -> dict | None:
     """
     Returns the optimal 11-player squad within budget.
 
     Result keys:
-      squad        – DataFrame with exp_pts column
-      formation    – e.g. "4-3-3"
-      captain      – player name string
-      captain_pts  – expected pts as captain
-      total_pts    – squad total expected pts/game
-      budget_used  – int euros
+      squad            – DataFrame with exp_pts column
+      formation        – e.g. "4-3-3"
+      captain          – player name string
+      captain_pts      – expected pts as captain
+      total_pts        – squad total expected pts/game
+      budget_used      – int euros
+      enriched_players – all players with team + exp_pts (for transfer page)
     """
     if players.empty:
         return None
@@ -305,7 +400,7 @@ def recommend_best_squad(
     enriched = _enrich_with_team(players, lineups)
     enriched = enriched.copy()
     enriched["exp_pts"] = enriched.apply(
-        lambda r: expected_matchday_points(r, fixtures, groups), axis=1
+        lambda r: expected_matchday_points(r, fixtures, groups, form=form), axis=1
     )
 
     best: dict | None = None
@@ -330,7 +425,7 @@ def recommend_best_squad(
     cap_row = best["squad"].loc[cap_idx]
     best["captain"] = cap_row["name"]
     best["captain_pts"] = round(float(cap_row["exp_pts"]) * CAPTAIN_MULTIPLIER, 1)
-    best["enriched_players"] = enriched  # expose for transfer page
+    best["enriched_players"] = enriched
     return best
 
 
@@ -343,6 +438,7 @@ def recommend_transfers(
     groups: pd.DataFrame,
     n_suggestions: int = 5,
     position_filter: str | None = None,
+    form: "pd.DataFrame | None" = None,
 ) -> dict:
     """
     Given current squad, suggest transfers in and out.
@@ -360,21 +456,20 @@ def recommend_transfers(
     else:
         squad_pos = squad_df.copy()
 
-    # Score available players
     if "exp_pts" not in available.columns:
         available["exp_pts"] = available.apply(
-            lambda r: expected_matchday_points(r, fixtures, groups), axis=1
+            lambda r: expected_matchday_points(r, fixtures, groups, form=form), axis=1
         )
     if "exp_pts" not in squad_pos.columns:
         squad_pos["exp_pts"] = squad_pos.apply(
-            lambda r: expected_matchday_points(r, fixtures, groups), axis=1
+            lambda r: expected_matchday_points(r, fixtures, groups, form=form), axis=1
         )
 
-    top_in = available.nlargest(n_suggestions, "exp_pts")
+    top_in  = available.nlargest(n_suggestions, "exp_pts")
     worst_out = squad_pos.nsmallest(n_suggestions, "exp_pts")
 
-    def row_to_dict(row, tag=""):
-        pt = str(row.get("penalty_taker", "")).lower()
+    def row_to_dict(row):
+        pt  = str(row.get("penalty_taker", "")).lower()
         spr = str(row.get("set_piece_role", "")).lower()
         reasons = []
         if pt in ("primary", "secondary"):
@@ -387,12 +482,12 @@ def recommend_transfers(
             label, _ = difficulty_label(diff)
             reasons.append(f"{label} fixtures (avg rank {diff:.0f})")
         return {
-            "name": row.get("name", ""),
+            "name":     row.get("name", ""),
             "position": str(row.get("position", "")).upper(),
-            "value": row.get("value", "?"),
-            "exp_pts": round(float(row.get("exp_pts", 0)), 1),
-            "team": team,
-            "reason": "  ·  ".join(reasons) if reasons else "—",
+            "value":    row.get("value", "?"),
+            "exp_pts":  round(float(row.get("exp_pts", 0)), 1),
+            "team":     team,
+            "reason":   "  ·  ".join(reasons) if reasons else "—",
         }
 
     return {
@@ -421,7 +516,7 @@ def squad_fixture_table(
 
     rows = []
     for _, p in squad_df.iterrows():
-        team = str(p.get("team", "")).strip()
+        team    = str(p.get("team", "")).strip()
         exp_pts = round(float(p.get("exp_pts", 0)), 1)
         fix_avg = fixture_difficulty(team, fixtures, groups, next_n)
         label, _ = difficulty_label(fix_avg)
@@ -439,11 +534,11 @@ def squad_fixture_table(
             opponents.append(f"{opp} ({diff_lbl})")
 
         rows.append({
-            "Player":      p.get("name", ""),
-            "Pos":         str(p.get("position", "")).upper(),
-            "Team":        team if team else "Unknown",
-            "Exp pts/g":   exp_pts,
-            "Fixtures":    difficulty_label(fix_avg)[0],
+            "Player":         p.get("name", ""),
+            "Pos":            str(p.get("position", "")).upper(),
+            "Team":           team if team else "Unknown",
+            "Exp pts/g":      exp_pts,
+            "Fixtures":       difficulty_label(fix_avg)[0],
             "Next opponents": "  →  ".join(opponents) if opponents else "—",
         })
 
@@ -463,6 +558,7 @@ def get_transfer_schedule(
     groups: pd.DataFrame,
     transfers_used: int = 0,
     today_str: str = "",
+    form: "pd.DataFrame | None" = None,
 ) -> list[dict]:  # noqa: C901
     """
     Returns one entry per matchday ROUND (not per day).
@@ -470,15 +566,22 @@ def get_transfer_schedule(
     A matchday round spans ~7 calendar days (e.g. Matchday 1 = June 11–17).
     Within that round, every calendar day with games is a transfer opportunity.
 
+    Strategy rules applied here:
+    - Never recommend transferring out a player who plays within 2 days
+      (Finnish rule: forfeiting a game's points is almost never worth the gain).
+    - Transfer suggestions prioritised by position: FWD → MID → DEF → GK.
+    - When picking the best in-player, prefer higher-value options (budget maximisation).
+
     Each entry:
-      round_label   – "Matchday 1", "Round of 32", etc.
-      round_start   – first game date in the round (YYYY-MM-DD)
-      round_end     – last game date in the round
-      days_to_start – calendar days until first game
-      urgency       – colour emoji
+      round_label         – "Matchday 1", "Round of 32", etc.
+      round_start         – first game date in the round (YYYY-MM-DD)
+      round_end           – last game date
+      round_span_days     – length of round in calendar days
+      days_to_start       – calendar days until first game
+      urgency             – colour emoji
       suggested_transfers – int (budget recommendation for this round)
-      pre_round_swaps – list of {out, in, position, pts_gain, reason}
-      daily_games   – list of {date, days_away, games: [{home, away, squad_home, squad_away}]}
+      pre_round_swaps     – list of {out, in, position, pts_gain, reason}
+      daily_games         – list of {date, days_away, games: [{home, away, squad_home, squad_away}]}
     """
     if fixtures.empty or squad_df.empty:
         return []
@@ -498,7 +601,18 @@ def get_transfer_schedule(
             fixtures["home_score"].isna() | (fixtures["home_score"].astype(str).str.strip() == "")
         ].copy()
 
-    # ── Build round → {date → [row]} map ──────────────────────────────────────
+    # Teams playing within 2 days: strategy rule — don't transfer these players out
+    teams_playing_soon: set[str] = set()
+    for _, row in unplayed.iterrows():
+        d = str(row.get("date", "")).strip()
+        try:
+            gd = datetime.date.fromisoformat(d)
+            if 0 <= (gd - today).days <= 1:
+                teams_playing_soon.add(str(row.get("home_team", "")).strip())
+                teams_playing_soon.add(str(row.get("away_team", "")).strip())
+        except ValueError:
+            pass
+
     def _round_key(row) -> str:
         md    = str(row.get("matchday", "")).strip()
         stage = str(row.get("stage", "")).strip()
@@ -517,7 +631,7 @@ def get_transfer_schedule(
         if not d:
             continue
         try:
-            game_date = datetime.date.fromisoformat(d)
+            datetime.date.fromisoformat(d)
         except ValueError:
             continue
         key = _round_key(row)
@@ -532,17 +646,18 @@ def get_transfer_schedule(
 
     transfers_remaining = MAX_TRANSFERS - transfers_used
     n_rounds = len(rounds)
-    # Front-load transfers: more for early rounds (fixture data is better)
-    # Simple even split; caller can adjust
     per_round = max(1, round(transfers_remaining / max(n_rounds, 1)))
 
-    # ── Pre-score all available players once ──────────────────────────────────
+    # Pre-score all available players once (expensive — do it here, not per round)
     if "exp_pts" not in all_players.columns:
         all_players = all_players.copy()
         all_players["exp_pts"] = all_players.apply(
-            lambda r: expected_matchday_points(r, fixtures, groups, next_n=3), axis=1
+            lambda r: expected_matchday_points(r, fixtures, groups, next_n=3, form=form), axis=1
         )
     sq_names = set(squad_df["name"].astype(str).str.strip())
+
+    # Lower number = transfer out first (strategy: FWD/MID upgrades > DEF > GK)
+    _POS_PRIORITY = {"FWD": 0, "MID": 1, "DEF": 2, "GK": 3}
 
     schedule = []
     for round_key in sorted(rounds.keys(), key=lambda k: min(rounds[k]["dates_games"].keys())):
@@ -573,42 +688,68 @@ def get_transfer_schedule(
         else:
             urgency = "🟢 Upcoming"
 
-        # ── Pre-round swap recommendations ────────────────────────────────────
-        # Restrict fixtures to just this round for scoring
+        # Score squad specifically for this round's fixtures
         round_fixture_dates = set(sorted_dates)
         round_fx = unplayed[unplayed["date"].astype(str).str.strip().isin(round_fixture_dates)]
 
         sq = squad_df.copy()
         sq["round_pts"] = sq.apply(
-            lambda r: expected_matchday_points(r, round_fx if not round_fx.empty else fixtures, groups, next_n=len(sorted_dates)),
+            lambda r: expected_matchday_points(
+                r,
+                round_fx if not round_fx.empty else fixtures,
+                groups,
+                next_n=len(sorted_dates),
+                form=form,
+            ),
             axis=1,
         )
-        worst = sq.nsmallest(min(3, per_round), "round_pts")
+
+        # Rule: never swap out someone who plays within 2 days of today
+        sq_eligible = sq[~sq["team"].astype(str).str.strip().isin(teams_playing_soon)].copy()
+        sq_eligible["_prio"] = sq_eligible["position"].str.upper().map(
+            lambda p: _POS_PRIORITY.get(p, 2)
+        )
+        # Sort: FWD/MID first (lower priority number), then by worst round_pts
+        worst = sq_eligible.sort_values(["_prio", "round_pts"]).head(min(3, per_round))
 
         swaps = []
         for _, out_row in worst.iterrows():
-            pos = str(out_row.get("position", "")).upper()
+            pos     = str(out_row.get("position", "")).upper()
+            out_val = parse_value(out_row.get("value", 0))
             candidates = all_players[
                 (~all_players["name"].astype(str).str.strip().isin(sq_names)) &
                 (all_players["position"].str.upper() == pos)
-            ]
+            ].copy()
             if candidates.empty:
                 continue
-            best_in = candidates.nlargest(1, "exp_pts").iloc[0]
+
+            # Small bonus for more expensive in-players (budget maximisation strategy)
+            candidates["_score"] = candidates["exp_pts"] + (
+                candidates["value"].apply(parse_value) / 10_000_000
+            )
+            best_in = candidates.nlargest(1, "_score").iloc[0]
             gain = round(float(best_in["exp_pts"]) - float(out_row.get("round_pts", 0)), 1)
-            if gain > 0.2:
+
+            if gain > 0.1:
                 team_in = str(best_in.get("team", ""))
                 diff = fixture_difficulty(team_in, fixtures, groups, next_n=3)
                 lbl, _ = difficulty_label(diff)
+                in_val = parse_value(best_in.get("value", 0))
+                if in_val > out_val + 50_000:
+                    value_note = f"  ·  ↑ {in_val/1000:.0f}k (was {out_val/1000:.0f}k)"
+                elif in_val < out_val - 50_000:
+                    value_note = f"  ·  ↓ cheaper {in_val/1000:.0f}k"
+                else:
+                    value_note = ""
                 swaps.append({
                     "out":      display_name(str(out_row["name"])),
                     "in":       display_name(str(best_in["name"])),
                     "position": pos,
                     "pts_gain": gain,
-                    "reason":   f"{lbl} fixtures · +{gain:.1f} pts/g vs. current pick",
+                    "reason":   f"{lbl} fixtures  ·  +{gain:.1f} pts/g{value_note}",
                 })
 
-        # ── Daily game breakdown ───────────────────────────────────────────────
+        # Day-by-day breakdown with squad markers
         daily_games = []
         for d_str in sorted_dates:
             try:
@@ -621,10 +762,10 @@ def get_transfer_schedule(
                 home = str(fx.get("home_team", ""))
                 away = str(fx.get("away_team", ""))
                 games.append({
-                    "home":        home,
-                    "away":        away,
-                    "squad_home":  home in squad_teams,
-                    "squad_away":  away in squad_teams,
+                    "home":       home,
+                    "away":       away,
+                    "squad_home": home in squad_teams,
+                    "squad_away": away in squad_teams,
                 })
             daily_games.append({
                 "date":      d_str,
@@ -633,15 +774,15 @@ def get_transfer_schedule(
             })
 
         schedule.append({
-            "round_label":          round_key,
-            "round_start":          round_start_str,
-            "round_end":            round_end_str,
-            "round_span_days":      round_span,
-            "days_to_start":        days_to_start,
-            "urgency":              urgency,
-            "suggested_transfers":  per_round,
-            "pre_round_swaps":      swaps,
-            "daily_games":          daily_games,
+            "round_label":         round_key,
+            "round_start":         round_start_str,
+            "round_end":           round_end_str,
+            "round_span_days":     round_span,
+            "days_to_start":       days_to_start,
+            "urgency":             urgency,
+            "suggested_transfers": per_round,
+            "pre_round_swaps":     swaps,
+            "daily_games":         daily_games,
         })
 
     return schedule

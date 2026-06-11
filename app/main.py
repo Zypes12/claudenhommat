@@ -48,6 +48,7 @@ players  = load_csv("players.csv")
 fixtures = load_csv("fixtures.csv")
 groups   = load_csv("groups.csv")
 lineups  = load_csv("lineups.csv")
+form     = load_csv("form.csv")
 
 # ── Header ─────────────────────────────────────────────────────────────────────
 st.title("⚽ Futispörssi  ·  World Cup 2026")
@@ -71,7 +72,7 @@ st.divider()
 
 # ── Generate recommendation ────────────────────────────────────────────────────
 with st.spinner("Calculating best squad…"):
-    result = recommend_best_squad(players, fixtures, groups, lineups)
+    result = recommend_best_squad(players, fixtures, groups, lineups, form=form)
 
 if result is None:
     st.warning(
