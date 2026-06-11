@@ -15,6 +15,9 @@ env/
 # Streamlit
 .streamlit/secrets.toml
 
+# Local API keys — never commit
+Data/api_config.json
+
 # macOS
 .DS_Store
 .AppleDouble
