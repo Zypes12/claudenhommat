@@ -86,9 +86,13 @@ def difficulty_label(avg_opp_rank: float) -> tuple[str, str]:
 # ── Team enrichment ────────────────────────────────────────────────────────────
 
 def _norm(s: str) -> str:
-    """Lowercase, strip accents, collapse spaces for fuzzy matching."""
+    """Lowercase, strip accents and encoding-error replacements for fuzzy matching."""
     nfkd = unicodedata.normalize("NFKD", str(s))
-    ascii_s = "".join(c for c in nfkd if not unicodedata.combining(c))
+    # Drop combining marks AND replacement characters (U+FFFD from encoding errors)
+    ascii_s = "".join(
+        c for c in nfkd
+        if not unicodedata.combining(c) and c != "�"
+    )
     return ascii_s.lower().strip()
 
 
@@ -591,6 +595,91 @@ def recommend_best_squad(
     best["captain_pts"] = round(float(cap_row["exp_pts"]) * CAPTAIN_MULTIPLIER, 1)
     best["enriched_players"] = enriched
     return best
+
+
+# ── User squad loader ──────────────────────────────────────────────────────────
+
+def load_user_squad(
+    players: pd.DataFrame,
+    lineups: pd.DataFrame,
+    fixtures: pd.DataFrame,
+    groups: pd.DataFrame,
+    form: "pd.DataFrame | None" = None,
+    actual_stats: "dict | None" = None,
+    form_stats: "dict | None" = None,
+) -> dict | None:
+    """
+    Build a squad dict (same shape as recommend_best_squad result) from players
+    where in_squad == 'True'.  Returns None if fewer than 11 players are flagged.
+    """
+    # in_squad is stored as string 'True'/'False' by load_csv
+    mask = players["in_squad"].astype(str).str.strip().str.lower() == "true"
+    user_players = players[mask].copy()
+    if len(user_players) < 11:
+        return None
+
+    enriched_all = _enrich_with_team(players, lineups)
+    user_enriched = enriched_all[mask].copy()
+    user_enriched["exp_pts"] = user_enriched.apply(
+        lambda r: expected_matchday_points(
+            r, fixtures, groups, form=form, actual_stats=actual_stats, form_stats=form_stats
+        ),
+        axis=1,
+    )
+
+    squad = user_enriched.reset_index(drop=True)
+    cap_idx = squad["exp_pts"].idxmax()
+    cap_row = squad.loc[cap_idx]
+    n_def = int((squad["position"].str.upper() == "DEF").sum())
+    n_mid = int((squad["position"].str.upper() == "MID").sum())
+    n_fwd = int((squad["position"].str.upper() == "FWD").sum())
+    formation = f"{n_def}-{n_mid}-{n_fwd}"
+
+    return {
+        "squad": squad,
+        "formation": formation,
+        "total_pts": round(float(squad["exp_pts"].sum()), 1),
+        "budget_used": int(squad["value"].apply(parse_value).sum()),
+        "captain": cap_row["name"],
+        "captain_pts": round(float(cap_row["exp_pts"]) * CAPTAIN_MULTIPLIER, 1),
+        "enriched_players": enriched_all,
+        "is_user_squad": True,
+    }
+
+
+def squad_coverage_gaps(
+    squad: pd.DataFrame,
+    fixtures: pd.DataFrame,
+) -> tuple[list[str], list[tuple[str, list[str]]]]:
+    """
+    Return (gap_dates, covered_list) for the group stage (June dates).
+
+    gap_dates    – dates where no squad player's team plays
+    covered_list – [(date, [teams_playing]), ...]  for days with coverage
+    """
+    squad_teams = set(
+        squad["team"].astype(str).str.strip().tolist()
+    ) - {"", "nan"}
+
+    june_dates = sorted(
+        d for d in fixtures["date"].astype(str).str.strip().unique()
+        if d.startswith("2026-06")
+    )
+
+    gaps: list[str] = []
+    covered: list[tuple[str, list[str]]] = []
+
+    for date in june_dates:
+        day_fx = fixtures[fixtures["date"].astype(str).str.strip() == date]
+        home = set(day_fx["home_team"].astype(str).str.strip())
+        away = set(day_fx["away_team"].astype(str).str.strip())
+        playing = (home | away) & squad_teams
+        if playing:
+            covered.append((date, sorted(playing)))
+        else:
+            gaps.append(date)
+
+    return gaps, covered
 
 
 # ── Transfer suggestions ───────────────────────────────────────────────────────

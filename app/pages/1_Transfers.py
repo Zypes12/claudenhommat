@@ -10,7 +10,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.data import load_csv
 from utils.team_form import load_team_form, get_form_stats
 from logic.recommendations import (
-    recommend_best_squad, recommend_transfers, get_transfer_schedule,
+    recommend_best_squad, load_user_squad, squad_coverage_gaps,
+    recommend_transfers, get_transfer_schedule,
     fixture_difficulty, difficulty_label, display_name, compute_actual_stats,
     _enrich_with_team, BUDGET, MAX_TRANSFERS, POS_COLORS,
 )
@@ -70,9 +71,13 @@ with c3:
 
 st.divider()
 
-# ── Generate squad ────────────────────────────────────────────────────────────
-with st.spinner("Calculating…"):
-    result = recommend_best_squad(players, fixtures, groups, lineups, form=form, actual_stats=actual_stats, form_stats=form_stats)
+# ── Load squad: user's actual squad first, fall back to algorithm ─────────────
+with st.spinner("Loading squad…"):
+    shared_kwargs = dict(form=form, actual_stats=actual_stats, form_stats=form_stats)
+    result = load_user_squad(players, lineups, fixtures, groups, **shared_kwargs)
+    using_user_squad = result is not None
+    if not using_user_squad:
+        result = recommend_best_squad(players, fixtures, groups, lineups, **shared_kwargs)
 
 if result is None:
     st.warning("Not enough data. Check the **Data** page.")
@@ -80,6 +85,61 @@ if result is None:
 
 squad    = result["squad"]
 enriched = result.get("enriched_players", _enrich_with_team(players, lineups))
+today    = datetime.date.today().isoformat()
+
+# ── My Squad + Coverage Map ────────────────────────────────────────────────────
+squad_label = "My Squad" if using_user_squad else "Recommended Squad"
+st.markdown(f"## {squad_label}")
+
+s_cols = st.columns(len(squad))
+pos_order = {"GK": 0, "DEF": 1, "MID": 2, "FWD": 3}
+for col, (_, p) in zip(s_cols, squad.sort_values("position", key=lambda s: s.map(pos_order)).iterrows()):
+    pos   = str(p.get("position", "")).upper()
+    color = POS_COLORS.get(pos, "#7c3aed")
+    col.markdown(
+        f"<div style='text-align:center;border-top:3px solid {color};padding:6px 2px;'>"
+        f"<div style='font-size:9px;color:{color};font-weight:700'>{pos}</div>"
+        f"<div style='font-size:12px;font-weight:700'>{display_name(str(p.get('name','')))}</div>"
+        f"<div style='font-size:10px;color:#64748b'>{p.get('team','')}</div>"
+        f"<div style='font-size:11px;color:#38bdf8'>~{float(p.get('exp_pts',0)):.1f} pts</div>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+st.markdown("### Coverage Map")
+gaps, covered = squad_coverage_gaps(squad, fixtures)
+
+if gaps:
+    st.error(f"**{len(gaps)} gap day(s)** — no player in action: " + "  |  ".join(gaps))
+
+# Draw a compact calendar grid
+june_dates = sorted(
+    d for d in fixtures["date"].astype(str).str.strip().unique()
+    if d.startswith("2026-06")
+)
+covered_map = {date: teams for date, teams in covered}
+cal_cols = st.columns(len(june_dates))
+for col, date in zip(cal_cols, june_dates):
+    day = date[8:]  # DD
+    if date in covered_map:
+        teams_str = ", ".join(covered_map[date])
+        col.markdown(
+            f"<div style='text-align:center;background:#14532d;border-radius:6px;"
+            f"padding:4px 2px;font-size:10px'>"
+            f"<b style='color:#4ade80'>Jun {day}</b><br>"
+            f"<span style='color:#86efac;font-size:9px'>{teams_str}</span></div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        col.markdown(
+            f"<div style='text-align:center;background:#7f1d1d;border-radius:6px;"
+            f"padding:4px 2px;font-size:10px'>"
+            f"<b style='color:#f87171'>Jun {day}</b><br>"
+            f"<span style='color:#fca5a5;font-size:9px'>GAP</span></div>",
+            unsafe_allow_html=True,
+        )
+
+st.divider()
 today    = datetime.date.today().isoformat()
 
 # ── Transfer strategy banner ───────────────────────────────────────────────────

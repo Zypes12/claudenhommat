@@ -8,7 +8,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 from utils.data import load_csv
 from utils.team_form import load_team_form, get_form_stats
 from logic.recommendations import (
-    recommend_best_squad, fixture_difficulty, difficulty_label,
+    recommend_best_squad, load_user_squad, squad_coverage_gaps,
+    fixture_difficulty, difficulty_label,
     squad_fixture_table, display_name, compute_actual_stats,
     BUDGET, CAPTAIN_MULTIPLIER, MAX_TRANSFERS, POS_COLORS,
 )
@@ -75,9 +76,13 @@ c4.metric("Transfers budget", f"35 total")
 
 st.divider()
 
-# ── Generate recommendation ────────────────────────────────────────────────────
-with st.spinner("Calculating best squad…"):
-    result = recommend_best_squad(players, fixtures, groups, lineups, form=form, actual_stats=actual_stats, form_stats=form_stats)
+# ── Load squad: user's actual squad first, fall back to algorithm ──────────────
+with st.spinner("Loading squad…"):
+    shared_kwargs = dict(form=form, actual_stats=actual_stats, form_stats=form_stats)
+    result = load_user_squad(players, lineups, fixtures, groups, **shared_kwargs)
+    using_user_squad = result is not None
+    if not using_user_squad:
+        result = recommend_best_squad(players, fixtures, groups, lineups, **shared_kwargs)
 
 if result is None:
     st.warning(
@@ -101,7 +106,8 @@ col_b.metric("Budget used", f"{budget_used / 1_000_000:.2f}M €", delta=f"{budg
 col_c.metric("Total exp pts / game", f"{total_pts:.1f}")
 col_d.metric("Captain", captain, delta=f"~{cap_pts:.1f} pts as captain", delta_color="off")
 
-st.markdown("### Starting XI")
+squad_label = "My Squad" if using_user_squad else "Recommended Starting XI"
+st.markdown(f"### {squad_label}")
 
 # ── Formation display ──────────────────────────────────────────────────────────
 
