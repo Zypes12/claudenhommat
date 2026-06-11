@@ -769,17 +769,27 @@ def get_transfer_schedule(
             fixtures["home_score"].isna() | (fixtures["home_score"].astype(str).str.strip() == "")
         ].copy()
 
-    # Teams playing within 2 days: strategy rule — don't transfer these players out
-    teams_playing_soon: set[str] = set()
+    # Teams playing TODAY: strategy rule — almost never transfer these players out.
+    # Transfer deadline is before the FIRST game of the day (Eastern Time).
+    # So if a player plays today, the window to transfer them out is already closed
+    # or about to close — keep them.
+    teams_playing_today: set[str] = set()
+    teams_playing_tomorrow: set[str] = set()
     for _, row in unplayed.iterrows():
         d = str(row.get("date", "")).strip()
         try:
             gd = datetime.date.fromisoformat(d)
-            if 0 <= (gd - today).days <= 1:
-                teams_playing_soon.add(str(row.get("home_team", "")).strip())
-                teams_playing_soon.add(str(row.get("away_team", "")).strip())
+            diff = (gd - today).days
+            if diff == 0:
+                teams_playing_today.add(str(row.get("home_team", "")).strip())
+                teams_playing_today.add(str(row.get("away_team", "")).strip())
+            elif diff == 1:
+                teams_playing_tomorrow.add(str(row.get("home_team", "")).strip())
+                teams_playing_tomorrow.add(str(row.get("away_team", "")).strip())
         except ValueError:
             pass
+    # Combined set used to protect players in near-term games
+    teams_playing_soon = teams_playing_today | teams_playing_tomorrow
 
     def _round_key(row) -> str:
         md    = str(row.get("matchday", "")).strip()

@@ -82,13 +82,31 @@ squad    = result["squad"]
 enriched = result.get("enriched_players", _enrich_with_team(players, lineups))
 today    = datetime.date.today().isoformat()
 
+# ── Transfer strategy banner ───────────────────────────────────────────────────
+with st.expander("📖 Transfer rules & strategy", expanded=False):
+    st.markdown("""
+**Timing:** Transfers can be made any time before the **first game of the day in Eastern Time (EDT/EST)**.
+WC 2026 is in North America — a 9 pm EDT kickoff on June 14 means your deadline is still June 14, not June 15.
+
+**Key rules:**
+- ✅ Before the tournament starts → **free** squad selection, no transfers used
+- 🔒 Once tournament kicks off → each change costs 1 of your **35 transfers**
+- ⛔ **Never transfer out a player who plays that day** — you forfeit the points
+- ⚽ **Priority 1:** Fill coverage gaps — days when none of your players has a game
+- 📈 **Priority 2:** Upgrade when a much-better player is available who plays today
+- 🏆 **Captain tip:** Rotate captaincy to whoever plays that day with the best matchup
+
+**35-transfer strategy:**
+- Group stage (June 11–27): use ≤ 8 transfers — only for gaps or clear upgrades
+- Round of 32 (June 28 – July 3): use 4–5 transfers as knockout brackets become clear
+- Round of 16 → Final: save 12+ transfers for player swaps as teams get eliminated
+""")
+
 # ── Transfer schedule ──────────────────────────────────────────────────────────
 st.markdown("## 📆 Transfer Windows by Round")
 st.caption(
-    "Each matchday round lasts ~7 days. "
-    "**Best time to transfer: before the first game of the round** "
-    "so all your players are covered for the full week. "
-    "Mid-round transfers are also valid but cost the same 1 transfer each."
+    "Each day's transfer window closes before the **first kickoff of that day (Eastern Time)**. "
+    "Players playing today cannot be transferred out — their points window has opened."
 )
 
 schedule = get_transfer_schedule(squad, enriched, fixtures, groups, used, today, form=form, actual_stats=actual_stats, form_stats=form_stats)
@@ -131,11 +149,11 @@ else:
                 for s in swaps:
                     d_away_s = s["days_until"]
                     if d_away_s == 0:
-                        when = "**TODAY** before kickoff"
+                        when = "**TODAY** — before first game (Eastern Time)"
                     elif d_away_s == 1:
-                        when = "**tomorrow**"
+                        when = "**tomorrow** before first game (Eastern Time)"
                     else:
-                        when = f"in **{d_away_s} days**"
+                        when = f"in **{d_away_s} days** (before first game, Eastern Time)"
                     is_gap = s["transfer_date"] in uncovered
 
                     is_free = bool(tournament_start and s["transfer_date"] <= tournament_start)

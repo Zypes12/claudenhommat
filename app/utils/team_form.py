@@ -47,22 +47,32 @@ FORM_COLUMNS = [
 
 def extract_wc_team_ids() -> dict[str, tuple[str, str]]:
     """
-    Fetch the WC 2026 scoreboard once and return
-    {display_name: (flashscore_slug, flashscore_id)} for every team.
+    Return {display_name: (flashscore_slug, flashscore_id)} for the 48 WC 2026 teams.
 
-    Field codes confirmed from live scoreboard inspection:
-      CX / AE = home team display name
-      WU      = home team URL slug  (e.g. "iraq")
-      PX      = home team ID        (e.g. "K8aAGt6r")
-      AF / FK = away team display name
-      WV      = away team URL slug  (e.g. "venezuela")
-      PY      = away team ID        (e.g. "raj05RS9")
+    Uses fetch_all_matches() which already filters to matches on/after 2026-06-01,
+    so only the actual 48 tournament participants appear (not teams from qualifying
+    playoff matches that Flashscore also lists on the WC page).
+
+    Field codes confirmed from live scoreboard:
+      CX / AE = home team name   WU = home slug   PX = home ID
+      AF / FK = away team name   WV = away slug   PY = away ID
     """
     body = _get(WC_SCOREBOARD_URL)
     teams: dict[str, tuple[str, str]] = {}
 
     for raw in body.split("~AA÷")[1:]:
         f = _parse_record("AA÷" + raw)
+
+        # Apply the same date filter as fetch_all_matches() — skip pre-June-2026 rows
+        ts_raw = f.get("AD", "")
+        if ts_raw and ts_raw.isdigit():
+            try:
+                import datetime as _dt
+                date_str = _dt.datetime.utcfromtimestamp(int(ts_raw)).strftime("%Y-%m-%d")
+                if date_str < "2026-06-01":
+                    continue
+            except (ValueError, OSError):
+                pass
 
         home_name = f.get("CX") or f.get("AE", "")
         home_slug = f.get("WU", "")

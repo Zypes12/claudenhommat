@@ -123,7 +123,12 @@ def fetch_all_matches() -> list[dict]:
         date_str = ""
         if ts_raw:
             try:
-                date_str = datetime.datetime.utcfromtimestamp(int(ts_raw)).strftime("%Y-%m-%d")
+                # WC 2026 games are in North America. Use EDT (UTC-4) so that a
+                # 9 pm EDT kickoff (01:00 UTC next day) lands on the right local date.
+                edt_offset = 4 * 3600
+                date_str = datetime.datetime.utcfromtimestamp(
+                    int(ts_raw) - edt_offset
+                ).strftime("%Y-%m-%d")
             except (ValueError, OSError):
                 pass
 
