@@ -1,0 +1,119 @@
+region,pos,team,p,w,d,l,f,a,gd,pts,last_10
+UEFA,1,Norway,10,10,0,0,46,6,40,30,WWWWWWWWWW
+UEFA,2,England,10,10,0,0,30,0,30,30,WWWWWWWWWW
+UEFA,3,Spain,10,9,1,0,30,5,25,28,WWWWWWWWWD
+UEFA,4,France,10,8,2,0,25,7,18,26,WWdWWWWDWW
+UEFA,5,Germany,10,8,1,1,27,5,22,25,WWWDLWWWWW
+UEFA,6,Netherlands,10,7,3,0,32,5,27,24,WDWWDWWWDW
+UEFA,7,Croatia,10,7,2,1,27,6,21,23,LDWWWWdWWW
+UEFA,8,Austria,10,7,2,1,25,5,20,23,WDWWWWWLWD
+UEFA,9,Italy,10,7,1,2,24,13,11,22,LWWWWWWLWD
+UEFA,10,Portugal,10,6,3,1,29,10,19,21,WdWDWWWDLW
+UEFA,11,Wales,10,6,2,2,26,13,13,20,WWDWLWLWWD
+UEFA,12,Poland,10,6,2,2,18,11,7,20,WWLDWWDWWL
+UEFA,13,Scotland,10,6,2,2,17,10,7,20,LdWWdWWWLW
+UEFA,14,Turkey,10,6,2,2,20,15,5,20,dLWLWWWDWW
+UEFA,15,Bosnia,10,5,4,1,19,9,10,19,WWWWLDWDDD
+UEFA,16,Belgium,10,5,3,2,29,9,20,18,LLDWWWdWDW
+UEFA,17,Czech Republic,10,5,3,2,22,12,10,18,WWWLWdLWDD
+UEFA,18,Slovakia,10,6,0,4,14,15,-1,18,WLWWWLWWLL
+UEFA,19,Kosovo,10,5,2,3,11,12,-1,17,LWLWdWWDWL
+UEFA,20,Denmark,10,4,4,2,23,11,12,16,LddWWWDLWD
+UEFA,21,Romania,10,5,1,4,23,12,11,16,WLWLWDWLWL
+UEFA,22,Switzerland,10,4,4,2,19,10,9,16,LDDLWWWdWD
+UEFA,23,Northern Ireland,10,5,1,4,16,10,6,16,WWDWLWLLWL
+UEFA,24,Israel,10,5,1,4,20,20,0,16,dWWLWWLLLW
+UEFA,25,Greece,10,5,1,4,16,16,0,16,WWLWWLLLWd
+UEFA,26,North Macedonia,10,4,4,2,14,14,0,16,WWDDWWdDLL
+UEFA,27,Faroe Islands,10,5,0,5,12,10,2,15,WLLLWLWWWL
+UEFA,28,Serbia,10,4,3,3,10,11,-1,15,DddWWLLWLW
+UEFA,29,Ukraine,10,4,3,3,15,17,-2,15,DDWLDWWLWL
+UEFA,30,Sweden,10,4,2,4,18,16,2,14,WWDLLLLDWW
+UEFA,31,Albania,10,4,2,4,9,9,0,14,LLWdDWWWLL
+UEFA,32,Ireland,10,4,2,4,12,16,-4,14,LWLDLLWWWD
+UEFA,33,Hungary,10,3,4,3,15,16,-1,13,DWLDDLWDWL
+UEFA,34,Montenegro,10,4,0,6,11,20,-9,12,LWWWLLLLWL
+UEFA,35,Iceland,10,3,2,5,20,21,-1,11,DLWLWLLDWL
+UEFA,36,Cyprus,10,3,2,5,14,16,-2,11,WLWLLLDDWL
+UEFA,37,Finland,10,3,1,6,8,17,-9,10,LLWDLWLWLL
+UEFA,38,Malta,10,2,3,5,5,19,-14,9,WdLLdLDLWL
+UEFA,39,Slovenia,10,1,5,4,6,16,-10,8,LWLDDLddLD
+UEFA,40,Kazakhstan,10,2,2,6,9,20,-11,8,LLLWLLLWDD
+UEFA,41,Bulgaria,10,2,2,6,5,25,-20,8,dLWDLLLLLW
+UEFA,42,Armenia,10,2,1,7,7,25,-18,7,DLLWLWLLLL
+UEFA,43,Latvia,10,1,2,7,6,18,-12,5,LLWLDLLDLL
+UEFA,44,Estonia,10,1,2,7,8,22,-14,5,dLLWLLLLDL
+UEFA,45,Belarus,10,0,5,5,6,21,-15,5,dDLDLLLLDd
+UEFA,46,Georgia,10,1,1,8,9,20,-11,4,LLDLLWLLLL
+UEFA,47,Moldova,10,1,1,8,6,33,-27,4,LWLLLLLDLL
+UEFA,48,San Marino,10,1,1,8,6,41,-35,4,DWLLLLLLLL
+UEFA,49,Lithuania,10,0,3,7,7,18,-11,3,LLLDdDLLLL
+UEFA,50,Luxembourg,10,0,3,7,4,17,-13,3,dDLDLLLLLL
+UEFA,51,Andorra,10,0,2,8,3,17,-14,2,LdLLLLLDLL
+UEFA,52,Azerbaijan,10,0,2,8,5,28,-23,2,LLdLLDLLLL
+UEFA,53,Gibraltar,10,0,2,8,4,29,-25,2,dDLLLLLLLL
+UEFA,54,Liechtenstein,10,0,1,9,1,34,-33,1,dLLLLLLLLL
+CAF,1,Morocco,8,4,2,2,8,5,3,14,..dWWdWLLW
+CAF,2,Tunisia,5,3,1,1,6,1,5,10,.....dLWWW
+CAF,3,Senegal,6,3,1,2,9,7,2,10,....LWWLWd
+CAF,4,Cameroon,5,2,2,1,8,5,3,8,.....LDWWD
+CAF,5,Ivory Coast,2,2,0,0,11,0,11,6,........WW
+CAF,6,Egypt,2,2,0,0,8,0,8,6,........WW
+CAF,7,Algeria,2,2,0,0,5,1,4,6,........WW
+CAF,8,Comoros,2,2,0,0,5,2,3,6,........WW
+CAF,9,Gabon,2,2,0,0,4,2,2,6,........WW
+CAF,10,Equatorial Guinea,2,2,0,0,2,0,2,6,........WW
+CAF,11,Ghana,5,2,0,3,6,8,-2,6,.....LWLWL
+CAF,12,Burkina Faso,2,1,1,0,4,1,3,4,........DW
+CAF,13,Mali,2,1,1,0,4,2,2,4,........WD
+CAF,14,Cape Verde,2,1,1,0,2,0,2,4,........dW
+CAF,15,Rwanda,2,1,1,0,2,0,2,4,........dW
+CAF,16,Guinea-Bissau,2,1,1,0,2,1,1,4,........DW
+CAF,17,Libya,2,1,1,0,2,1,1,4,........WD
+CAF,18,Sudan,2,1,1,0,2,1,1,4,........DW
+CAF,19,Kenya,2,1,0,1,6,2,4,3,........LW
+CAF,20,Madagascar,2,1,0,1,3,1,2,3,........LW
+CAF,21,Zambia,2,1,0,1,5,4,1,3,........WL
+CAF,22,DR Congo,2,1,0,1,2,1,1,3,........WL
+CAF,23,Namibia,2,1,0,1,2,1,1,3,........LW
+CAF,24,Burundi,2,1,0,1,4,4,0,3,........WL
+CAF,25,Botswana,2,1,0,1,3,3,0,3,........LW
+CAF,26,Guinea,2,1,0,1,2,2,0,3,........WL
+CAF,27,Niger,2,1,0,1,2,2,0,3,........LW
+CAF,28,Uganda,2,1,0,1,2,2,0,3,........LW
+CAF,29,Malawi,2,1,0,1,1,1,0,3,........WL
+CAF,30,Mozambique,2,1,0,1,3,4,-1,3,........WL
+CAF,31,South Africa,2,1,0,1,2,3,-1,3,........WL
+CAF,32,Tanzania,2,1,0,1,1,2,-1,3,........WL
+CAF,33,Nigeria,2,0,2,0,2,2,0,2,........DD
+CAF,34,Lesotho,2,0,2,0,1,1,0,2,........Dd
+CAF,35,Togo,2,0,2,0,1,1,0,2,........Dd
+CAF,36,Zimbabwe,2,0,2,0,1,1,0,2,........dD
+CAF,37,Angola,2,0,2,0,0,0,0,2,........dd
+CAF,38,Benin,2,0,1,1,1,2,-1,1,........Ld
+CAF,39,Central African Republic,2,0,1,1,3,5,-2,1,........LD
+CAF,40,Mauritania,2,0,1,1,0,2,-2,1,........Ld
+CAF,41,Sierra Leone,2,0,1,1,0,2,-2,1,........dL
+CAF,42,Ethiopia,2,0,1,1,0,3,-3,1,........dL
+CAF,43,Mauritius,2,0,1,1,0,3,-3,1,........Ld
+CAF,44,South Sudan,2,0,1,1,0,4,-4,1,........Ld
+CAF,45,Eritrea,0,0,0,0,0,0,0,0,..........
+CAF,46,Congo,1,0,0,1,2,4,-2,0,.........L
+CONMEBOL,1,Argentina,10,6,2,2,20,7,13,20,WLDWLWWWWD
+CONMEBOL,2,Paraguay,10,5,4,1,12,7,5,19,dWdWWDWDWL
+CONMEBOL,3,Brazil,10,5,3,2,13,9,4,18,WLWWDDWLdW
+CONMEBOL,4,Ecuador,10,4,5,1,8,2,6,17,LWddWWWddd
+CONMEBOL,5,Bolivia,10,4,2,4,12,18,-6,14,WWWLLDLdLW
+CONMEBOL,6,Uruguay,10,2,5,3,6,7,-1,11,ddLdWDLdLW
+CONMEBOL,7,Colombia,10,2,4,4,13,12,1,10,DWLWLLLDdD
+CONMEBOL,8,Peru,10,2,4,4,5,9,-4,10,DLWLdLWLdd
+CONMEBOL,9,Venezuela,10,2,3,5,9,16,-7,9,LdDLDLLWWL
+CONMEBOL,10,Chile,10,1,2,7,6,17,-11,5,LLLLdWLdLL
+OFC,1,New Zealand,5,5,0,0,29,1,28,15,.....WWWWW
+OFC,2,New Caledonia,5,3,1,1,10,7,3,10,.....WWDWL
+OFC,3,Tahiti,4,2,0,2,5,6,-1,6,......LWWL
+OFC,4,Fiji,4,1,2,1,5,11,-6,5,......WDDL
+OFC,5,Solomon Islands,3,1,0,2,4,5,-1,3,.......LLW
+OFC,6,Papua New Guinea,3,0,1,2,5,8,-3,1,.......LDL
+OFC,7,American Samoa,0,0,0,0,0,0,0,0,..........
+OFC,8,Cook Islands,0,0,0,0,0,0,0,0,..........

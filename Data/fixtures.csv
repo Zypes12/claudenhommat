@@ -1,0 +1,105 @@
+match_id,matchday,stage,date,time_uk,home_team,away_team,group
+1,1,Group Stage,2026-06-11,,Mexico,South Africa,A
+2,1,Group Stage,2026-06-11,,Korea Republic,Czechia,A
+3,1,Group Stage,2026-06-12,,Canada,Bosnia and Herzegovina,B
+4,1,Group Stage,2026-06-12,,USA,Paraguay,D
+5,1,Group Stage,2026-06-13,,Qatar,Switzerland,B
+6,1,Group Stage,2026-06-13,,Brazil,Morocco,C
+7,1,Group Stage,2026-06-13,,Haiti,Scotland,C
+8,1,Group Stage,2026-06-13,,Australia,Türkiye,D
+9,1,Group Stage,2026-06-14,,Germany,Curaçao,E
+10,1,Group Stage,2026-06-14,,Netherlands,Japan,F
+11,1,Group Stage,2026-06-14,,Côte d'Ivoire,Ecuador,E
+12,1,Group Stage,2026-06-14,,Sweden,Tunisia,F
+13,1,Group Stage,2026-06-15,,Spain,Cabo Verde,H
+14,1,Group Stage,2026-06-15,,Belgium,Egypt,G
+15,1,Group Stage,2026-06-15,,Saudi Arabia,Uruguay,H
+16,1,Group Stage,2026-06-15,,IR Iran,New Zealand,G
+17,1,Group Stage,2026-06-16,,France,Senegal,I
+18,1,Group Stage,2026-06-16,,Iraq,Norway,I
+19,1,Group Stage,2026-06-16,,Argentina,Algeria,J
+20,1,Group Stage,2026-06-16,,Austria,Jordan,J
+21,1,Group Stage,2026-06-17,,Portugal,Congo DR,K
+22,1,Group Stage,2026-06-17,,England,Croatia,L
+23,1,Group Stage,2026-06-17,,Ghana,Panama,L
+24,1,Group Stage,2026-06-17,,Uzbekistan,Colombia,K
+25,2,Group Stage,2026-06-18,,Czechia,South Africa,A
+26,2,Group Stage,2026-06-18,,Switzerland,Bosnia and Herzegovina,B
+27,2,Group Stage,2026-06-18,,Canada,Qatar,B
+28,2,Group Stage,2026-06-18,,Mexico,Korea Republic,A
+29,2,Group Stage,2026-06-19,,USA,Australia,D
+30,2,Group Stage,2026-06-19,,Scotland,Morocco,C
+31,2,Group Stage,2026-06-19,,Brazil,Haiti,C
+32,2,Group Stage,2026-06-19,,Türkiye,Paraguay,D
+33,2,Group Stage,2026-06-20,,Netherlands,Sweden,F
+34,2,Group Stage,2026-06-20,,Germany,Côte d'Ivoire,E
+35,2,Group Stage,2026-06-20,,Ecuador,Curaçao,E
+36,2,Group Stage,2026-06-20,,Tunisia,Japan,F
+37,2,Group Stage,2026-06-21,,Spain,Saudi Arabia,H
+38,2,Group Stage,2026-06-21,,Belgium,IR Iran,G
+39,2,Group Stage,2026-06-21,,Uruguay,Cabo Verde,H
+40,2,Group Stage,2026-06-21,,New Zealand,Egypt,G
+41,2,Group Stage,2026-06-22,,Argentina,Austria,J
+42,2,Group Stage,2026-06-22,,France,Iraq,I
+43,2,Group Stage,2026-06-22,,Norway,Senegal,I
+44,2,Group Stage,2026-06-22,,Jordan,Algeria,J
+45,2,Group Stage,2026-06-23,,Portugal,Uzbekistan,K
+46,2,Group Stage,2026-06-23,,England,Ghana,L
+47,2,Group Stage,2026-06-23,,Panama,Croatia,L
+48,2,Group Stage,2026-06-23,,Colombia,Congo DR,K
+49,3,Group Stage,2026-06-24,,South Africa,Korea Republic,A
+50,3,Group Stage,2026-06-24,,Czechia,Mexico,A
+51,3,Group Stage,2026-06-24,,Switzerland,Canada,B
+52,3,Group Stage,2026-06-24,,Bosnia and Herzegovina,Qatar,B
+53,3,Group Stage,2026-06-24,,Morocco,Haiti,C
+54,3,Group Stage,2026-06-24,,Scotland,Brazil,C
+55,3,Group Stage,2026-06-25,,Curaçao,Côte d'Ivoire,E
+56,3,Group Stage,2026-06-25,,Ecuador,Germany,E
+57,3,Group Stage,2026-06-25,,Tunisia,Netherlands,F
+58,3,Group Stage,2026-06-25,,Japan,Sweden,F
+59,3,Group Stage,2026-06-25,,Türkiye,USA,D
+60,3,Group Stage,2026-06-25,,Paraguay,Australia,D
+61,3,Group Stage,2026-06-26,,Norway,France,I
+62,3,Group Stage,2026-06-26,,Senegal,Iraq,I
+63,3,Group Stage,2026-06-26,,Cabo Verde,Saudi Arabia,H
+64,3,Group Stage,2026-06-26,,Uruguay,Spain,H
+65,3,Group Stage,2026-06-26,,New Zealand,Belgium,G
+66,3,Group Stage,2026-06-26,,Egypt,IR Iran,G
+67,3,Group Stage,2026-06-27,,Algeria,Austria,J
+68,3,Group Stage,2026-06-27,,Jordan,Argentina,J
+69,3,Group Stage,2026-06-27,,Colombia,Portugal,K
+70,3,Group Stage,2026-06-27,,Congo DR,Uzbekistan,K
+71,3,Group Stage,2026-06-27,,Panama,England,L
+72,3,Group Stage,2026-06-27,,Croatia,Ghana,L
+73,,Round of 32,2026-06-28,,2nd Group A,2nd Group B,
+74,,Round of 32,2026-06-29,,1st Group C,2nd Group F,
+75,,Round of 32,2026-06-29,,1st Group E,Best 3rd (A/B/C/D/F),
+76,,Round of 32,2026-06-29,,1st Group F,2nd Group C,
+77,,Round of 32,2026-06-30,,2nd Group E,2nd Group I,
+78,,Round of 32,2026-06-30,,1st Group I,Best 3rd (C/D/F/G/H),
+79,,Round of 32,2026-06-30,,1st Group A,Best 3rd (C/E/F/H/I),
+80,,Round of 32,2026-07-01,,1st Group L,Best 3rd (E/H/I/J/K),
+81,,Round of 32,2026-07-01,,1st Group G,Best 3rd (A/E/H/I/J),
+82,,Round of 32,2026-07-01,,1st Group D,Best 3rd (B/E/F/I/J),
+83,,Round of 32,2026-07-02,,1st Group H,2nd Group J,
+84,,Round of 32,2026-07-02,,2nd Group K,2nd Group L,
+85,,Round of 32,2026-07-02,,1st Group B,Best 3rd (E/F/G/I/J),
+86,,Round of 32,2026-07-03,,2nd Group D,2nd Group G,
+87,,Round of 32,2026-07-03,,1st Group J,2nd Group H,
+88,,Round of 32,2026-07-03,,1st Group K,Best 3rd (D/E/I/J/L),
+89,,Round of 16,2026-07-04,,Winner 73,Winner 76,
+90,,Round of 16,2026-07-04,,Winner 75,Winner 78,
+91,,Round of 16,2026-07-05,,Winner 74,Winner 77,
+92,,Round of 16,2026-07-05,,Winner 79,Winner 80,
+93,,Round of 16,2026-07-06,,Winner 83,Winner 84,
+94,,Round of 16,2026-07-06,,Winner 81,Winner 82,
+95,,Round of 16,2026-07-07,,Winner 86,Winner 87,
+96,,Round of 16,2026-07-07,,Winner 85,Winner 88,
+97,,Quarter-final,2026-07-09,,Winner 89,Winner 90,
+98,,Quarter-final,2026-07-10,,Winner 93,Winner 94,
+99,,Quarter-final,2026-07-11,,Winner 91,Winner 92,
+100,,Quarter-final,2026-07-11,,Winner 95,Winner 96,
+101,,Semi-final,2026-07-14,,Winner 97,Winner 98,
+102,,Semi-final,2026-07-15,,Winner 99,Winner 100,
+103,,Third-place play-off,2026-07-18,,Loser 101,Loser 102,
+104,,Final,2026-07-19,,Winner 101,Winner 102,

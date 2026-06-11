@@ -1,0 +1,518 @@
+Team,Player Name,Position,Formation
+Mexico,Rangel,GK,4-3-3
+Mexico,Reyes,RB,4-3-3
+Mexico,Montes,CB,4-3-3
+Mexico,Vasques,CB,4-3-3
+Mexico,Gallardo,LB,4-3-3
+Mexico,Figaldo,CM,4-3-3
+Mexico,Lira,CM,4-3-3
+Mexico,Mora,CM,4-3-3
+Mexico,Alvarado,RW,4-3-3
+Mexico,Jimenez,ST,4-3-3
+Mexico,Gimenez,LW,4-3-3
+South Africa,Williams,GK,4-3-3
+South Africa,Modiba,RB,4-3-3
+South Africa,Mbokazi,CB,4-3-3
+South Africa,Sibisi,CB,4-3-3
+South Africa,Mudau,LB,4-3-3
+South Africa,Mbatha,CM,4-3-3
+South Africa,Sithole,CM,4-3-3
+South Africa,Mokoena,CM,4-3-3
+South Africa,Appolis,RW,4-3-3
+South Africa,Foster,ST,4-3-3
+South Africa,Mofokeng,LW,4-3-3
+South Korea,Seung-Gyu,GK,4-3-3
+South Korea,Young-woo,RB,4-3-3
+South Korea,Min-Jae,CB,4-3-3
+South Korea,Tae-Hyeon,CB,4-3-3
+South Korea,Tae-Seok,LB,4-3-3
+South Korea,Jin-Gyu,CM,4-3-3
+South Korea,Han-Beom,CM,4-3-3
+South Korea,In-Beom,CM,4-3-3
+South Korea,Kang-in,RW,4-3-3
+South Korea,Son,ST,4-3-3
+South Korea,Hwang,LW,4-3-3
+Czechia,Kovar,GK,3-4-3
+Czechia,Holes,CB,3-4-3
+Czechia,Hranac,CB,3-4-3
+Czechia,Krejci,CB,3-4-3
+Czechia,Coufal,RWB,3-4-3
+Czechia,Darida,CM,3-4-3
+Czechia,Soucek,CM,3-4-3
+Czechia,Zeleny,LWB,3-4-3
+Czechia,Sulc,RW,3-4-3
+Czechia,Schick,ST,3-4-3
+Czechia,Provod,LW,3-4-3
+Canada,Crepeau,GK,4-4-2
+Canada,Johnston,RB,4-4-2
+Canada,Luc De Fougerolles,CB,4-4-2
+Canada,Cornelius,CB,4-4-2
+Canada,Laryea,LB,4-4-2
+Canada,Buchanan,RM,4-4-2
+Canada,Estaquio,CM,4-4-2
+Canada,Kone,CM,4-4-2
+Canada,Millar,LM,4-4-2
+Canada,David,ST,4-4-2
+Canada,Larin,ST,4-4-2
+Bosnia and Herzegovina,Vasilj,GK,4-4-2
+Bosnia and Herzegovina,Dedic,RB,4-4-2
+Bosnia and Herzegovina,Katic,CB,4-4-2
+Bosnia and Herzegovina,Murharemovic,CB,4-4-2
+Bosnia and Herzegovina,Kolasinac,LB,4-4-2
+Bosnia and Herzegovina,Bajraketevic,RM,4-4-2
+Bosnia and Herzegovina,Basic,CM,4-4-2
+Bosnia and Herzegovina,Tahirovic,CM,4-4-2
+Bosnia and Herzegovina,Memic,LM,4-4-2
+Bosnia and Herzegovina,Demirovic,ST,4-4-2
+Bosnia and Herzegovina,Dzeko,ST,4-4-2
+Qatar,Barsham,GK,4-2-3-1
+Qatar,Al Oui,RB,4-2-3-1
+Qatar,Khouki,CB,4-2-3-1
+Qatar,Mendes,CB,4-2-3-1
+Qatar,Al-Brake,LB,4-2-3-1
+Qatar,Madibo,DM,4-2-3-1
+Qatar,Boudiaf,DM,4-2-3-1
+Qatar,Edmilson,RW,4-2-3-1
+Qatar,Al-Mannai,AM,4-2-3-1
+Qatar,Afif,LW,4-2-3-1
+Qatar,Ali,ST,4-2-3-1
+Switzerland,Kobel,GK,4-5-1
+Switzerland,Widemar,RB,4-5-1
+Switzerland,Elvedi,CB,4-5-1
+Switzerland,Akanji,CB,4-5-1
+Switzerland,Rodriguez,LB,4-5-1
+Switzerland,Xhaka,CM,4-5-1
+Switzerland,Freuler,CM,4-5-1
+Switzerland,Vargas,RW,4-5-1
+Switzerland,Rieder,AM,4-5-1
+Switzerland,Ndoye,LW,4-5-1
+Switzerland,Embolo,ST,4-5-1
+Brazil,Alisson,GK,4-2-4
+Brazil,Danilo,RB,4-2-4
+Brazil,Marquinhos,CB,4-2-4
+Brazil,Gabriel,CB,4-2-4
+Brazil,Sandro,LB,4-2-4
+Brazil,Casemiro,DM,4-2-4
+Brazil,Bruno G,DM,4-2-4
+Brazil,Raphina,RW,4-2-4
+Brazil,Vinicius,LW,4-2-4
+Brazil,Cunha,ST,4-2-4
+Brazil,Martinelli,ST,4-2-4
+Morocco,Bounou,GK,4-2-3-1
+Morocco,Hakimi,RB,4-2-3-1
+Morocco,Diop,CB,4-2-3-1
+Morocco,Riad,CB,4-2-3-1
+Morocco,Mazraoui,LB,4-2-3-1
+Morocco,El Ayaoui,DM,4-2-3-1
+Morocco,El Mourabet,DM,4-2-3-1
+Morocco,Diaz,RW,4-2-3-1
+Morocco,Ounahi,AM,4-2-3-1
+Morocco,Ezzalzouli,LW,4-2-3-1
+Morocco,El Kaabi,ST,4-2-3-1
+Haiti,Placide,GK,4-4-2
+Haiti,Arcus,RB,4-4-2
+Haiti,Arde,CB,4-4-2
+Haiti,Delcroix,CB,4-4-2
+Haiti,Lacroix,LB,4-4-2
+Haiti,Deedson,RM,4-4-2
+Haiti,Bellegarde,CM,4-4-2
+Haiti,Jean-Jaques,CM,4-4-2
+Haiti,Providence,LM,4-4-2
+Haiti,Isidor,ST,4-4-2
+Haiti,Nazon,ST,4-4-2
+Scotland,Gordon,GK,4-4-2
+Scotland,Hickey,RB,4-4-2
+Scotland,Souttar,CB,4-4-2
+Scotland,McKenna,CB,4-4-2
+Scotland,Robertson,LB,4-4-2
+Scotland,Gannon-Doak,RM,4-4-2
+Scotland,McTominay,CM,4-4-2
+Scotland,Christie,CM,4-4-2
+Scotland,McGinn,LM,4-4-2
+Scotland,Adams,ST,4-4-2
+Scotland,Shankland,ST,4-4-2
+USA,Freese,GK,3-4-3
+USA,McKenzie,CB,3-4-3
+USA,Richards,CB,3-4-3
+USA,Ream,CB,3-4-3
+USA,Dest,RWB,3-4-3
+USA,Adams,CM,3-4-3
+USA,McKennie,CM,3-4-3
+USA,Robinson,LWB,3-4-3
+USA,Tillman,RW,3-4-3
+USA,Balogun,ST,3-4-3
+USA,Pulisic,LW,3-4-3
+Paraguay,Gill,GK,4-2-3-1
+Paraguay,Caceres,RB,4-2-3-1
+Paraguay,Gomez,CB,4-2-3-1
+Paraguay,Alderete,CB,4-2-3-1
+Paraguay,Alonso,LB,4-2-3-1
+Paraguay,Cubas,DM,4-2-3-1
+Paraguay,Bobadilla,DM,4-2-3-1
+Paraguay,Gomez,RW,4-2-3-1
+Paraguay,Enciso,AM,4-2-3-1
+Paraguay,Almiron,LW,4-2-3-1
+Paraguay,Sanabria,ST,4-2-3-1
+Australia,Ryan,GK,5-4-1
+Australia,Italiano,RWB,5-4-1
+Australia,Circati,CB,5-4-1
+Australia,Souttar,CB,5-4-1
+Australia,Burgess,CB,5-4-1
+Australia,Bos,LWB,5-4-1
+Australia,Irankunda,RM,5-4-1
+Australia,O’Neil,CM,5-4-1
+Australia,Irvine,CM,5-4-1
+Australia,Metcalfe,LM,5-4-1
+Australia,Toure,ST,5-4-1
+Turkey,Cakir,GK,4-2-3-1
+Turkey,Celik,RB,4-2-3-1
+Turkey,Demiral,CB,4-2-3-1
+Turkey,Bardakci,CB,4-2-3-1
+Turkey,Kadioglu,LB,4-2-3-1
+Turkey,Yuksek,DM,4-2-3-1
+Turkey,Calhanoglu,DM,4-2-3-1
+Turkey,Yildiz,RW,4-2-3-1
+Turkey,Guler,AM,4-2-3-1
+Turkey,Yilmaz,LW,4-2-3-1
+Turkey,Akturkoglu,ST,4-2-3-1
+Germany,Neuer,GK,4-2-3-1
+Germany,Kimmich,RB,4-2-3-1
+Germany,Tah,CB,4-2-3-1
+Germany,Schlotterbeck,CB,4-2-3-1
+Germany,Raum,LB,4-2-3-1
+Germany,Goretzka,DM,4-2-3-1
+Germany,Pavlovic,DM,4-2-3-1
+Germany,Sane,RW,4-2-3-1
+Germany,Musiala,AM,4-2-3-1
+Germany,Wirtz,LW,4-2-3-1
+Germany,Havertz,ST,4-2-3-1
+Curacao,Room,GK,4-3-3
+Curacao,Sambo,RB,4-3-3
+Curacao,Obispo,CB,4-3-3
+Curacao,Gaari,CB,4-3-3
+Curacao,Floranus,LB,4-3-3
+Curacao,J Bacuna,CM,4-3-3
+Curacao,Comenencia,CM,4-3-3
+Curacao,L Bacuna,CM,4-3-3
+Curacao,Chong,RW,4-3-3
+Curacao,Lacadia,ST,4-3-3
+Curacao,Hansen,LW,4-3-3
+Ivory Coast,Fofana,GK,4-3-3
+Ivory Coast,Doue,RB,4-3-3
+Ivory Coast,Kossonou,CB,4-3-3
+Ivory Coast,Ndicka,CB,4-3-3
+Ivory Coast,Konan,LB,4-3-3
+Ivory Coast,Kessie,CM,4-3-3
+Ivory Coast,Sangare,CM,4-3-3
+Ivory Coast,Fofana,CM,4-3-3
+Ivory Coast,Diallo,RW,4-3-3
+Ivory Coast,Guessand,ST,4-3-3
+Ivory Coast,Diomande,LW,4-3-3
+Ecuador,Galindez,GK,4-2-3-1
+Ecuador,Franco,RB,4-2-3-1
+Ecuador,Ordonez,CB,4-2-3-1
+Ecuador,Hincapie,CB,4-2-3-1
+Ecuador,Estupinan,LB,4-2-3-1
+Ecuador,Pacho,DM,4-2-3-1
+Ecuador,Vite,DM,4-2-3-1
+Ecuador,Yeboah,RW,4-2-3-1
+Ecuador,Plata,AM,4-2-3-1
+Ecuador,Angulo,LW,4-2-3-1
+Ecuador,Valencia,ST,4-2-3-1
+Japan,Suzuki,GK,3-4-3
+Japan,Ito,CB,3-4-3
+Japan,Watanabe,CB,3-4-3
+Japan,Taniguchi,CB,3-4-3
+Japan,Doan,RWB,3-4-3
+Japan,Endo,CM,3-4-3
+Japan,Sano,CM,3-4-3
+Japan,Nakamura,LWB,3-4-3
+Japan,Kubo,RW,3-4-3
+Japan,Ueda,ST,3-4-3
+Japan,Kamada,LW,3-4-3
+Netherlands,Verbruggen,GK,4-2-3-1
+Netherlands,Dumfries,RB,4-2-3-1
+Netherlands,Van Hecke,CB,4-2-3-1
+Netherlands,VVD,CB,4-2-3-1
+Netherlands,VDV,LB,4-2-3-1
+Netherlands,De Jong,DM,4-2-3-1
+Netherlands,Gravenberch,DM,4-2-3-1
+Netherlands,Malen,RW,4-2-3-1
+Netherlands,Reijnders,AM,4-2-3-1
+Netherlands,Gakpo,LW,4-2-3-1
+Netherlands,Depay,ST,4-2-3-1
+Sweden,Johansson,GK,4-3-3
+Sweden,Svensson,RB,4-3-3
+Sweden,Lindelof,CB,4-3-3
+Sweden,Lagerbielke,CB,4-3-3
+Sweden,Gudmunsson,LB,4-3-3
+Sweden,Karlstrom,CM,4-3-3
+Sweden,Hien,CM,4-3-3
+Sweden,Ayari,CM,4-3-3
+Sweden,Elanga,RW,4-3-3
+Sweden,Gyokeres,ST,4-3-3
+Sweden,Isak,LW,4-3-3
+Tunisia,Dahmen,GK,4-3-3
+Tunisia,Valery,RB,4-3-3
+Tunisia,Bronn,CB,4-3-3
+Tunisia,Talbi,CB,4-3-3
+Tunisia,Abdi,LB,4-3-3
+Tunisia,Mejbri,CM,4-3-3
+Tunisia,Skhiri,CM,4-3-3
+Tunisia,Khedira,CM,4-3-3
+Tunisia,Tounekti,RW,4-3-3
+Tunisia,Saad,ST,4-3-3
+Tunisia,Achouri,LW,4-3-3
+Belgium,Courtois,GK,4-3-3
+Belgium,Meunier,RB,4-3-3
+Belgium,Theate,CB,4-3-3
+Belgium,De Winter,CB,4-3-3
+Belgium,De Cuyper,LB,4-3-3
+Belgium,Onana,CM,4-3-3
+Belgium,Tielemans,CM,4-3-3
+Belgium,KDB,CM,4-3-3
+Belgium,Doku,RW,4-3-3
+Belgium,Lukaku,ST,4-3-3
+Belgium,Trossard,LW,4-3-3
+Egypt,Shobeir,GK,4-3-3
+Egypt,Hany,RB,4-3-3
+Egypt,Ibrahim,CB,4-3-3
+Egypt,Fathy,CB,4-3-3
+Egypt,Fatouh,LB,4-3-3
+Egypt,Lasheen,CM,4-3-3
+Egypt,Attia,CM,4-3-3
+Egypt,Ashour,CM,4-3-3
+Egypt,Salah,RW,4-3-3
+Egypt,Marmoush,ST,4-3-3
+Egypt,Trezeguet,LW,4-3-3
+Iran,Beiranvand,GK,4-2-3-1
+Iran,Hardani,RB,4-2-3-1
+Iran,Khalilzadeh,CB,4-2-3-1
+Iran,Mohammadi,CB,4-2-3-1
+Iran,Nemati,LB,4-2-3-1
+Iran,Ezatolahi,DM,4-2-3-1
+Iran,Razzaghinia,DM,4-2-3-1
+Iran,Mohebbi,RW,4-2-3-1
+Iran,Ghoddos,AM,4-2-3-1
+Iran,Ghayedi,LW,4-2-3-1
+Iran,Taremi,ST,4-2-3-1
+New Zealand,Paulsen,GK,4-2-3-1
+New Zealand,Cacace,RB,4-2-3-1
+New Zealand,Boxall,CB,4-2-3-1
+New Zealand,Payne,CB,4-2-3-1
+New Zealand,Surman,LB,4-2-3-1
+New Zealand,Stamenic,DM,4-2-3-1
+New Zealand,Bell,DM,4-2-3-1
+New Zealand,Just,RW,4-2-3-1
+New Zealand,Singh,AM,4-2-3-1
+New Zealand,Old,LW,4-2-3-1
+New Zealand,Wood,ST,4-2-3-1
+Spain,Simon,GK,4-3-3
+Spain,Llorente,RB,4-3-3
+Spain,Cubarsi,CB,4-3-3
+Spain,Laporte,CB,4-3-3
+Spain,Cucurella,LB,4-3-3
+Spain,Ruiz,CM,4-3-3
+Spain,Rodri,CM,4-3-3
+Spain,Pedri,CM,4-3-3
+Spain,Yamal,RW,4-3-3
+Spain,Oryazabal,ST,4-3-3
+Spain,Williams,LW,4-3-3
+Cape Verde,Vozinha,GK,4-3-3
+Cape Verde,Moreira,RB,4-3-3
+Cape Verde,Costa,CB,4-3-3
+Cape Verde,Diney,CB,4-3-3
+Cape Verde,Cabral,LB,4-3-3
+Cape Verde,Monteiro,CM,4-3-3
+Cape Verde,Pina,CM,4-3-3
+Cape Verde,Duarte,CM,4-3-3
+Cape Verde,Cabral,RW,4-3-3
+Cape Verde,Livramento,ST,4-3-3
+Cape Verde,Mendes,LW,4-3-3
+Saudi Arabia,Al Aqidi,GK,4-2-3-1
+Saudi Arabia,Abdulhamid,RB,4-2-3-1
+Saudi Arabia,Al Tambakti,CB,4-2-3-1
+Saudi Arabia,Al Amri,CB,4-2-3-1
+Saudi Arabia,Al Harbi,LB,4-2-3-1
+Saudi Arabia,Kanno,DM,4-2-3-1
+Saudi Arabia,Al Dawsari,DM,4-2-3-1
+Saudi Arabia,Al Ghannam,RW,4-2-3-1
+Saudi Arabia,Al Juwayr,AM,4-2-3-1
+Saudi Arabia,Al Dawsari,LW,4-2-3-1
+Saudi Arabia,Al Buraikan,ST,4-2-3-1
+Uruguay,Rochet,GK,4-2-3-1
+Uruguay,Varela,RB,4-2-3-1
+Uruguay,Gimenez,CB,4-2-3-1
+Uruguay,Araujo,CB,4-2-3-1
+Uruguay,Olivera,LB,4-2-3-1
+Uruguay,Ugarte,DM,4-2-3-1
+Uruguay,Valverde,DM,4-2-3-1
+Uruguay,Pellistri,RW,4-2-3-1
+Uruguay,Arrascaeta,AM,4-2-3-1
+Uruguay,Araujo,LW,4-2-3-1
+Uruguay,Nunez,ST,4-2-3-1
+France,Maignan,GK,4-2-3-1
+France,Kounde,RB,4-2-3-1
+France,Upamecano,CB,4-2-3-1
+France,Saliba,CB,4-2-3-1
+France,Digne,LB,4-2-3-1
+France,Kone,DM,4-2-3-1
+France,Tchouameni,DM,4-2-3-1
+France,Dembele,RW,4-2-3-1
+France,Olise,AM,4-2-3-1
+France,Doue,LW,4-2-3-1
+France,Mbappe,ST,4-2-3-1
+Senegal,Mendy,GK,4-3-3
+Senegal,Diatta,RB,4-3-3
+Senegal,Koulibaly,CB,4-3-3
+Senegal,Niakhate,CB,4-3-3
+Senegal,Diouf,LB,4-3-3
+Senegal,Diarra,CM,4-3-3
+Senegal,I Gueye,CM,4-3-3
+Senegal,P Gueye,CM,4-3-3
+Senegal,Sarr,RW,4-3-3
+Senegal,Jackson,ST,4-3-3
+Senegal,Mane,LW,4-3-3
+Iraq,Basil,GK,4-4-2
+Iraq,Ali,RB,4-4-2
+Iraq,Tasheen,CB,4-4-2
+Iraq,Hashim,CB,4-4-2
+Iraq,Doski,LB,4-4-2
+Iraq,Farji,RM,4-4-2
+Iraq,Al Ammari,CM,4-4-2
+Iraq,Iqbal,CM,4-4-2
+Iraq,Jasim,LM,4-4-2
+Iraq,Hussein,ST,4-4-2
+Iraq,Al Hamadi,ST,4-4-2
+Norway,Nyland,GK,4-3-3
+Norway,Ryerson,RB,4-3-3
+Norway,Ajer,CB,4-3-3
+Norway,Heggem,CB,4-3-3
+Norway,Wolfe,LB,4-3-3
+Norway,Odegaard,CM,4-3-3
+Norway,Berge,CM,4-3-3
+Norway,Berg,CM,4-3-3
+Norway,Sorloth,RW,4-3-3
+Norway,Haaland,ST,4-3-3
+Norway,Nusa,LW,4-3-3
+Argentina,Martinez,GK,4-3-3
+Argentina,Molina,RB,4-3-3
+Argentina,Romero,CB,4-3-3
+Argentina,Otamendi,CB,4-3-3
+Argentina,Tagliafico,LB,4-3-3
+Argentina,De Paul,CM,4-3-3
+Argentina,Mac Allister,CM,4-3-3
+Argentina,Enzo,CM,4-3-3
+Argentina,Messi,RW,4-3-3
+Argentina,Alvarez,ST,4-3-3
+Argentina,Almada,LW,4-3-3
+Algeria,Zidane,GK,4-2-3-1
+Algeria,Belghali,RB,4-2-3-1
+Algeria,Mandi,CB,4-2-3-1
+Algeria,Bensebaini,CB,4-2-3-1
+Algeria,RAN,LB,4-2-3-1
+Algeria,Boudaoui,DM,4-2-3-1
+Algeria,Aouar,DM,4-2-3-1
+Algeria,Mahrez,RW,4-2-3-1
+Algeria,Maza,AM,4-2-3-1
+Algeria,Gouiri,LW,4-2-3-1
+Algeria,Amoura,ST,4-2-3-1
+Austria,Schlager,GK,4-2-3-1
+Austria,Laimer,RB,4-2-3-1
+Austria,Leinhart,CB,4-2-3-1
+Austria,Alaba,CB,4-2-3-1
+Austria,Mwene,LB,4-2-3-1
+Austria,Seiwald,DM,4-2-3-1
+Austria,Schlager,DM,4-2-3-1
+Austria,Schmid,RW,4-2-3-1
+Austria,Sabitzer,AM,4-2-3-1
+Austria,Gregoritsch,LW,4-2-3-1
+Austria,Arnautovic,ST,4-2-3-1
+Jordan,Abulaila,GK,5-2-3
+Jordan,Haddad,RWB,5-2-3
+Jordan,Nasib,RCB,5-2-3
+Jordan,Al Arab,CB,5-2-3
+Jordan,Abu Alnadi,LCB,5-2-3
+Jordan,Taha,LWB,5-2-3
+Jordan,Jamous,CM,5-2-3
+Jordan,Al Rawabdeh,CM,5-2-3
+Jordan,Tamari,RW,5-2-3
+Jordan,Olwan,ST,5-2-3
+Jordan,Al Mardi,LW,5-2-3
+Portugal,Costa,GK,4-3-3
+Portugal,Cancelo,RB,4-3-3
+Portugal,Inacio,CB,4-3-3
+Portugal,Dias,CB,4-3-3
+Portugal,Mendes,LB,4-3-3
+Portugal,Vitinha,CM,4-3-3
+Portugal,Joao Neves,CM,4-3-3
+Portugal,Fernandes,CM,4-3-3
+Portugal,Neto,RW,4-3-3
+Portugal,Ronaldo,ST,4-3-3
+Portugal,Leao,LW,4-3-3
+DR Congo,Mpazi,GK,4-3-3
+DR Congo,Wan-Bissaka,RB,4-3-3
+DR Congo,Tuanzebe,CB,4-3-3
+DR Congo,Mbemba,CB,4-3-3
+DR Congo,Masuaku,LB,4-3-3
+DR Congo,Mukau,CM,4-3-3
+DR Congo,Moutassamy,CM,4-3-3
+DR Congo,Sadiki,CM,4-3-3
+DR Congo,Elia,RW,4-3-3
+DR Congo,Bakambu,ST,4-3-3
+DR Congo,Wissa,LW,4-3-3
+Uzbekistan,Yusupov,GK,5-2-3
+Uzbekistan,Alijonov,RWB,5-2-3
+Uzbekistan,Khusanov,RCB,5-2-3
+Uzbekistan,Ashmuratov,CB,5-2-3
+Uzbekistan,Abdullaev,LCB,5-2-3
+Uzbekistan,Nasrullaev,LWB,5-2-3
+Uzbekistan,Shukurov,CM,5-2-3
+Uzbekistan,Hamrobekov,CM,5-2-3
+Uzbekistan,Fayzullaev,RW,5-2-3
+Uzbekistan,Shomudorov,ST,5-2-3
+Uzbekistan,Urunov,LW,5-2-3
+Colombia,Vargas,GK,4-2-3-1
+Colombia,Munoz,RB,4-2-3-1
+Colombia,Sanchez,CB,4-2-3-1
+Colombia,Lucumi,CB,4-2-3-1
+Colombia,Mojica,LB,4-2-3-1
+Colombia,Lerma,DM,4-2-3-1
+Colombia,Rios,DM,4-2-3-1
+Colombia,Arias,RW,4-2-3-1
+Colombia,Rodriguez,AM,4-2-3-1
+Colombia,Diaz,LW,4-2-3-1
+Colombia,Suarez,ST,4-2-3-1
+England,Pickford,GK,4-2-3-1
+England,James,RB,4-2-3-1
+England,Guehi,CB,4-2-3-1
+England,Konsa,CB,4-2-3-1
+England,O’Reilly,LB,4-2-3-1
+England,Anderson,DM,4-2-3-1
+England,Rice,DM,4-2-3-1
+England,Saka,RW,4-2-3-1
+England,Rogers,AM,4-2-3-1
+England,Gordon,LW,4-2-3-1
+England,Kane,ST,4-2-3-1
+Croatia,Livakovic,GK,4-2-3-1
+Croatia,Stanisic,RB,4-2-3-1
+Croatia,Vuskovic,CB,4-2-3-1
+Croatia,Sutalo,CB,4-2-3-1
+Croatia,Gvardiol,LB,4-2-3-1
+Croatia,Modric,DM,4-2-3-1
+Croatia,Kovacic,DM,4-2-3-1
+Croatia,Baturina,RW,4-2-3-1
+Croatia,Kramaric,AM,4-2-3-1
+Croatia,Perisic,LW,4-2-3-1
+Croatia,Budimir,ST,4-2-3-1
+Ghana,Asare,GK,4-2-3-1
+Ghana,Seidu,RB,4-2-3-1
+Ghana,Oppong,CB,4-2-3-1
+Ghana,Adjetey,CB,4-2-3-1
+Ghana,Mensah,LB,4-2-3-1
+Ghana,Partey,DM,4-2-3-1
+Ghana,Yirenkyi,DM,4-2-3-1
+Ghana,Fatawu,RW,4-2-3-1
+Ghana,Ayew,AM,4-2-3-1
+Ghana,Semenyo,LW,4-2-3-1
+Ghana,Williams,ST,4-2-3-1
