@@ -398,7 +398,8 @@ def recommend_best_squad(
         return None
 
     enriched = _enrich_with_team(players, lineups)
-    enriched = enriched.copy()
+    # Keep only players matched to a lineup entry — non-starters are irrelevant
+    enriched = enriched[enriched["team"].astype(str).str.strip() != ""].copy()
     enriched["exp_pts"] = enriched.apply(
         lambda r: expected_matchday_points(r, fixtures, groups, form=form), axis=1
     )
