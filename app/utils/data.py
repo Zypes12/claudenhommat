@@ -26,9 +26,31 @@ SCHEMAS = {
     ],
 }
 
+# Columns that should stay numeric; everything else is cast to string on load.
+NUMERIC_COLUMNS = {
+    "fixtures.csv":  ["match_id", "matchday"],
+    "groups.csv":    ["fifa_ranking"],
+    "form.csv":      ["pos", "p", "w", "d", "l", "f", "a", "gd", "pts"],
+    "results.csv":   ["match_id", "home_score", "away_score"],
+}
+
 
 def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
+    return df
+
+
+def _coerce_types(df: pd.DataFrame, filename: str) -> pd.DataFrame:
+    """
+    Read everything as string first to avoid float-NaN on empty columns,
+    then convert known numeric columns back to numeric.
+    """
+    numeric_cols = NUMERIC_COLUMNS.get(filename, [])
+    for col in df.columns:
+        if col in numeric_cols:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        else:
+            df[col] = df[col].fillna("").astype(str).replace("nan", "")
     return df
 
 
@@ -36,8 +58,9 @@ def load_csv(filename: str) -> pd.DataFrame:
     path = DATA_DIR / filename
     if path.exists():
         try:
-            df = pd.read_csv(path)
+            df = pd.read_csv(path, dtype=str)
             df = _normalize_columns(df)
+            df = _coerce_types(df, filename)
             if not df.empty:
                 return df
         except Exception:

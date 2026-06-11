@@ -15,10 +15,12 @@ Scoring rules (from futisporssi.fi/ohjeet):
 """
 from __future__ import annotations
 import math
+import re
+import unicodedata
 import pandas as pd
 
 
-# ── Scoring tables ─────────────────────────────────────────────────────────────
+# ── Constants ──────────────────────────────────────────────────────────────────
 
 POSITION_POINTS: dict[str, dict] = {
     "GK":  {"goal": 9, "assist": 6, "win": 3, "draw": 1, "loss": -2, "clean_sheet": 3},
@@ -29,36 +31,86 @@ POSITION_POINTS: dict[str, dict] = {
 CAPTAIN_MULTIPLIER = 1.3
 BUDGET = 3_800_000
 SQUAD_SIZE = 11
+MAX_TRANSFERS = 35
 VALID_FORMATIONS = ["4-4-2", "4-3-3", "4-5-1", "3-5-2", "3-4-3", "5-3-2", "5-4-1"]
 
-
-# ── Squad helpers ──────────────────────────────────────────────────────────────
-
-def get_squad(players: pd.DataFrame) -> pd.DataFrame:
-    """Rows from players.csv where in_squad is True."""
-    if players.empty or "in_squad" not in players.columns:
-        return pd.DataFrame(columns=players.columns if not players.empty else [])
-    mask = players["in_squad"].astype(str).str.strip().str.lower().isin(["true", "1", "yes"])
-    return players[mask].copy().reset_index(drop=True)
+POS_COLORS = {"GK": "#f59e0b", "DEF": "#22c55e", "MID": "#3b82f6", "FWD": "#ef4444"}
 
 
-def squad_budget_used(squad: pd.DataFrame) -> float:
-    """Sum of squad player values (strips '€' and spaces, returns float)."""
-    if squad.empty or "value" not in squad.columns:
-        return 0.0
-    total = 0.0
-    for v in squad["value"]:
-        try:
-            total += float(str(v).replace("€", "").replace("€", "").replace(" ", "").replace("\xa0", ""))
-        except ValueError:
-            pass
-    return total
+# ── Value parsing ──────────────────────────────────────────────────────────────
+
+def parse_value(val) -> float:
+    """Convert '275 000 €', '275�000', etc. → 275000.0 by keeping only digits."""
+    digits = re.sub(r"[^\d]", "", str(val))
+    return float(digits) if digits else 0.0
+
+
+# ── Difficulty labels ──────────────────────────────────────────────────────────
+
+def difficulty_label(avg_opp_rank: float) -> tuple[str, str]:
+    """Returns (label, hex_color) based on average opponent FIFA ranking."""
+    if avg_opp_rank >= 60:
+        return "Easy", "#22c55e"
+    elif avg_opp_rank >= 30:
+        return "Medium", "#f59e0b"
+    else:
+        return "Hard", "#ef4444"
+
+
+# ── Team enrichment ────────────────────────────────────────────────────────────
+
+def _norm(s: str) -> str:
+    """Lowercase, strip accents, collapse spaces for fuzzy matching."""
+    nfkd = unicodedata.normalize("NFKD", str(s))
+    ascii_s = "".join(c for c in nfkd if not unicodedata.combining(c))
+    return ascii_s.lower().strip()
+
+
+def _enrich_with_team(players: pd.DataFrame, lineups: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add 'team' column to players by joining with lineups.csv.
+    Uses partial name matching (lineup names are often last-name only).
+    """
+    df = players.copy()
+    if lineups.empty or "player_name" not in lineups.columns or "team" not in lineups.columns:
+        df["team"] = ""
+        return df
+
+    # Build lookup: normalised_lineup_name → team
+    lineup_map: dict[str, str] = {}
+    for _, row in lineups.iterrows():
+        key = _norm(str(row["player_name"]))
+        lineup_map[key] = str(row["team"]).strip()
+
+    def find_team(player_name: str) -> str:
+        norm_player = _norm(player_name)
+        parts = norm_player.split()
+
+        # 1. Exact full-name match
+        if norm_player in lineup_map:
+            return lineup_map[norm_player]
+
+        # 2. Last name only (players.csv stores "LastName FirstName")
+        #    This is the reliable path — avoids matching first names like "David"
+        #    against unrelated players (e.g. Jonathan David for Canada).
+        if parts and parts[0] in lineup_map:
+            return lineup_map[parts[0]]
+
+        # 3. Two-word compound last name (e.g. "De Bruyne", "Van Dijk")
+        if len(parts) >= 2:
+            compound = parts[0] + " " + parts[1]
+            if compound in lineup_map:
+                return lineup_map[compound]
+
+        return ""
+
+    df["team"] = df["name"].astype(str).apply(find_team)
+    return df
 
 
 # ── Fixture / ranking helpers ──────────────────────────────────────────────────
 
 def get_team_ranking(team: str, groups: pd.DataFrame) -> float:
-    """FIFA ranking from groups.csv. Lower = stronger."""
     if groups.empty or not team:
         return 50.0
     row = groups[groups["team"].astype(str).str.strip() == team.strip()]
@@ -71,11 +123,7 @@ def get_team_ranking(team: str, groups: pd.DataFrame) -> float:
 
 
 def _result_probs(team_rank: float, opp_rank: float) -> tuple[float, float, float]:
-    """
-    Rough win/draw/loss probabilities based on FIFA ranking difference.
-    Higher rank number = weaker team.
-    """
-    rank_diff = opp_rank - team_rank   # positive → facing weaker opponent
+    rank_diff = opp_rank - team_rank
     raw_win = 1 / (1 + math.exp(-rank_diff * 0.04))
     draw = 0.22
     win = min(max(raw_win - draw / 2, 0.05), 0.85)
@@ -84,32 +132,24 @@ def _result_probs(team_rank: float, opp_rank: float) -> tuple[float, float, floa
 
 
 def fixture_difficulty(team: str, fixtures: pd.DataFrame, groups: pd.DataFrame, next_n: int = 3) -> float:
-    """
-    Score where higher = easier upcoming fixtures.
-    Returns average opponent FIFA ranking across next_n unplayed fixtures.
-    """
+    """Average opponent FIFA ranking across next N unplayed fixtures. Higher = easier."""
     if fixtures.empty or groups.empty or not team:
         return 50.0
-
     unplayed = fixtures
     if "home_score" in fixtures.columns:
         unplayed = fixtures[
             fixtures["home_score"].isna() | (fixtures["home_score"].astype(str).str.strip() == "")
         ]
-
     team_fx = unplayed[
         (unplayed["home_team"].astype(str).str.strip() == team.strip()) |
         (unplayed["away_team"].astype(str).str.strip() == team.strip())
     ].head(next_n)
-
     if team_fx.empty:
         return 50.0
-
     scores = []
     for _, row in team_fx.iterrows():
-        opp = row["away_team"] if row["home_team"].strip() == team.strip() else row["home_team"]
+        opp = row["away_team"] if str(row["home_team"]).strip() == team.strip() else row["home_team"]
         scores.append(get_team_ranking(str(opp).strip(), groups))
-
     return round(sum(scores) / len(scores), 1)
 
 
@@ -121,25 +161,12 @@ def expected_matchday_points(
     groups: pd.DataFrame,
     next_n: int = 3,
 ) -> float:
-    """
-    Estimate a player's expected points per matchday, using game rules and
-    fixture difficulty. Used to rank/compare players objectively.
-
-    Factors used:
-      - Win/draw/loss probability (from FIFA ranking gap)
-      - Clean sheet probability (roughly correlated with result)
-      - Penalty taker bonus
-      - Set piece role (extra assist probability)
-      - Position-specific scoring weights
-    """
     pos = str(player.get("position", "")).strip().upper()
     if pos not in POSITION_POINTS:
-        pos = "MID"  # safe default
-
+        pos = "MID"
     pp = POSITION_POINTS[pos]
-    team = str(player.get("team", "")).strip() if pd.notna(player.get("team")) else ""
+    team = str(player.get("team", "")).strip() if pd.notna(player.get("team", "")) else ""
 
-    # --- Get upcoming fixtures for this team ---
     unplayed = fixtures
     if "home_score" in fixtures.columns:
         unplayed = fixtures[
@@ -151,40 +178,26 @@ def expected_matchday_points(
     ].head(next_n)
 
     if team_fx.empty or not team:
-        # No fixtures data — use a neutral estimate
-        base = 2.0 + (2.0 if pos in ("GK", "DEF") else 1.0)
-        return base
+        # No team data — neutral base estimate
+        return round(2.5 + (1.0 if pos in ("GK", "DEF") else 0.5), 2)
 
     total_pts = 0.0
-    num_fixtures = len(team_fx)
-
     for _, row in team_fx.iterrows():
         opp = row["away_team"] if str(row["home_team"]).strip() == team else row["home_team"]
         team_rank = get_team_ranking(team, groups)
         opp_rank  = get_team_ranking(str(opp).strip(), groups)
-
         win_p, draw_p, loss_p = _result_probs(team_rank, opp_rank)
 
-        # --- Appearance + 60-min points (assume regular starter if in lineup) ---
-        pts = 2.0  # appearance (1) + 60-min (1)
-
-        # --- Result bonus ---
+        pts = 2.0  # appearance + 60 min
         pts += win_p * pp["win"] + draw_p * pp["draw"] + loss_p * pp["loss"]
 
-        # --- Clean sheet probability (correlated with win/draw against weaker side) ---
-        # Rough heuristic: CS prob ≈ 60% of win prob + 20% of draw prob
         cs_prob = win_p * 0.60 + draw_p * 0.20
         pts += cs_prob * pp["clean_sheet"]
 
-        # --- GK saves bonus: facing more shots from weaker teams unlikely;
-        #     facing stronger teams → more shots but risk of loss/concede
-        #     Use a flat 1.5 expected save-pts for active GKs (real data needed) ---
         if pos == "GK":
-            pts += 1.5  # rough average save bonus
+            pts += 1.5
 
-        # --- Goals-against penalty for DEF ---
         if pos == "DEF":
-            # Expected goals against correlates with loss probability
             expected_ga = loss_p * 2.5 + draw_p * 0.5
             if expected_ga < 2:
                 pts -= 0.5
@@ -193,227 +206,366 @@ def expected_matchday_points(
             else:
                 pts -= 1.5
 
-        # --- Penalty taker ---
         is_pen_taker = str(player.get("penalty_taker", "")).strip().lower() in ("primary", "secondary")
         pen_primary  = str(player.get("penalty_taker", "")).strip().lower() == "primary"
         if is_pen_taker:
-            # Rough: ~0.4 penalties per game for primary taker on good team
             pen_rate = 0.4 if pen_primary else 0.2
-            pen_score_pts = pp["goal"] - 2  # goal points minus missed_pen cost if saved
-            # Scored ~80% of pens, missed ~20%
-            pts += pen_rate * (0.80 * pen_score_pts + 0.20 * -2)
+            pts += pen_rate * (0.80 * (pp["goal"] - 2) + 0.20 * -2)
 
-        # --- Set piece role: extra assist probability ---
         spr = str(player.get("set_piece_role", "")).strip().lower()
         if spr in ("both", "free kicks"):
-            pts += 0.3 * pp["assist"]   # rough free-kick assist chance
+            pts += 0.3 * pp["assist"]
         if spr in ("both", "corners"):
-            pts += 0.2 * pp["assist"]   # rough corner assist chance
+            pts += 0.2 * pp["assist"]
 
-        # --- Shots on target (attacking players) ---
         if pos in ("MID", "FWD"):
-            # Attacking players from teams facing weak sides → more shots
-            # Rough: 0.5 pts expected shots bonus
             pts += (opp_rank / 100) * 0.5
 
         total_pts += pts
 
-    return round(total_pts / num_fixtures, 2)
+    return round(total_pts / len(team_fx), 2)
 
 
-# ── Captain recommendation ─────────────────────────────────────────────────────
+# ── Squad optimizer ────────────────────────────────────────────────────────────
 
-def recommend_captain(players: pd.DataFrame, fixtures: pd.DataFrame, groups: pd.DataFrame) -> dict:
+MIN_PLAYER_VALUE = 275_000  # used for budget reservation
+
+
+def _pick_for_formation(
+    players_df: pd.DataFrame, n_def: int, n_mid: int, n_fwd: int
+) -> pd.DataFrame | None:
+    """Greedy budget-aware squad selection. Returns 11-player DataFrame or None."""
+    budget = BUDGET
+    chosen: list[pd.Series] = []
+
+    slots = [("GK", 1), ("DEF", n_def), ("MID", n_mid), ("FWD", n_fwd)]
+    slots_remaining = sum(s for _, s in slots)
+
+    for pos, count in slots:
+        slots_remaining -= count
+        # Reserve minimum value for remaining positions
+        reserve = slots_remaining * MIN_PLAYER_VALUE
+        pos_budget = budget - reserve
+
+        candidates = (
+            players_df[players_df["position"].str.upper() == pos]
+            .sort_values("exp_pts", ascending=False)
+        )
+
+        selected: list[pd.Series] = []
+        for _, row in candidates.iterrows():
+            if len(selected) >= count:
+                break
+            val = parse_value(row["value"])
+            if val > 0 and val <= pos_budget:
+                selected.append(row)
+                pos_budget -= val
+                budget -= val
+
+        if len(selected) < count:
+            return None
+        chosen.extend(selected)
+
+    return pd.DataFrame(chosen).reset_index(drop=True)
+
+
+def recommend_best_squad(
+    players: pd.DataFrame,
+    fixtures: pd.DataFrame,
+    groups: pd.DataFrame,
+    lineups: pd.DataFrame,
+) -> dict | None:
     """
-    Returns the recommended captain.
-    Best captain = player with highest expected points × 1.3 multiplier.
-    Prioritises penalty takers from teams with easy fixtures.
-    """
-    squad = get_squad(players)
-    if squad.empty:
-        return {"player": None, "reason": "No squad set — tick in_squad for your players on Data Input."}
+    Returns the optimal 11-player squad within budget.
 
-    squad = squad.copy()
-    squad["exp_pts"] = squad.apply(
+    Result keys:
+      squad        – DataFrame with exp_pts column
+      formation    – e.g. "4-3-3"
+      captain      – player name string
+      captain_pts  – expected pts as captain
+      total_pts    – squad total expected pts/game
+      budget_used  – int euros
+    """
+    if players.empty:
+        return None
+
+    enriched = _enrich_with_team(players, lineups)
+    enriched = enriched.copy()
+    enriched["exp_pts"] = enriched.apply(
         lambda r: expected_matchday_points(r, fixtures, groups), axis=1
     )
-    squad["cap_pts"] = squad["exp_pts"] * CAPTAIN_MULTIPLIER
 
-    best_idx = squad["cap_pts"].idxmax()
-    best = squad.loc[best_idx]
+    best: dict | None = None
+    for formation in VALID_FORMATIONS:
+        d, m, f = [int(x) for x in formation.split("-")]
+        squad = _pick_for_formation(enriched, d, m, f)
+        if squad is None:
+            continue
+        total_pts = squad["exp_pts"].sum()
+        if best is None or total_pts > best["total_pts"]:
+            best = {
+                "squad": squad,
+                "formation": formation,
+                "total_pts": round(total_pts, 1),
+                "budget_used": int(squad["value"].apply(parse_value).sum()),
+            }
 
-    reasons = []
-    pos = str(best.get("position", "")).upper()
-    reasons.append(f"expected ~{best['exp_pts']:.1f} pts/game → {best['cap_pts']:.1f} as captain (×1.3)")
+    if best is None:
+        return None
 
-    pt = str(best.get("penalty_taker", "")).lower()
-    if pt in ("primary", "secondary"):
-        reasons.append(f"penalty taker ({pt})")
-
-    spr = str(best.get("set_piece_role", "")).lower()
-    if spr not in ("no", "none", ""):
-        reasons.append(f"set pieces: {spr}")
-
-    fix_score = fixture_difficulty(str(best.get("team", "")), fixtures, groups)
-    reasons.append(f"fixture score {fix_score} (higher = easier opponents)")
-
-    return {
-        "player": best["name"],
-        "position": pos,
-        "expected_pts": round(best["exp_pts"], 1),
-        "captain_pts": round(best["cap_pts"], 1),
-        "reason": " | ".join(reasons),
-    }
+    cap_idx = best["squad"]["exp_pts"].idxmax()
+    cap_row = best["squad"].loc[cap_idx]
+    best["captain"] = cap_row["name"]
+    best["captain_pts"] = round(float(cap_row["exp_pts"]) * CAPTAIN_MULTIPLIER, 1)
+    best["enriched_players"] = enriched  # expose for transfer page
+    return best
 
 
 # ── Transfer suggestions ───────────────────────────────────────────────────────
 
 def recommend_transfers(
-    players: pd.DataFrame,
+    squad_df: pd.DataFrame,
+    all_players: pd.DataFrame,
     fixtures: pd.DataFrame,
     groups: pd.DataFrame,
-    lineups: pd.DataFrame,
-    n_suggestions: int = 3,
+    n_suggestions: int = 5,
     position_filter: str | None = None,
-) -> list[dict]:
+) -> dict:
     """
-    Suggest players to bring in, ranked by expected matchday points.
-    Transfers are precious (max 50 total tournament) — only suggest
-    players with meaningfully better expected score than squad players.
+    Given current squad, suggest transfers in and out.
+    Returns {"out": [...], "in": [...]}
     """
-    squad = get_squad(players)
-    if players.empty:
-        return []
+    if squad_df.empty or all_players.empty:
+        return {"out": [], "in": []}
 
-    squad_names = set(squad["name"].astype(str).str.strip().tolist())
-    available = players[~players["name"].astype(str).str.strip().isin(squad_names)].copy()
+    squad_names = set(squad_df["name"].astype(str).str.strip().tolist())
+    available = all_players[~all_players["name"].astype(str).str.strip().isin(squad_names)].copy()
 
     if position_filter:
         available = available[available["position"].str.upper() == position_filter.upper()]
+        squad_pos = squad_df[squad_df["position"].str.upper() == position_filter.upper()].copy()
+    else:
+        squad_pos = squad_df.copy()
 
-    if available.empty:
-        return []
+    # Score available players
+    if "exp_pts" not in available.columns:
+        available["exp_pts"] = available.apply(
+            lambda r: expected_matchday_points(r, fixtures, groups), axis=1
+        )
+    if "exp_pts" not in squad_pos.columns:
+        squad_pos["exp_pts"] = squad_pos.apply(
+            lambda r: expected_matchday_points(r, fixtures, groups), axis=1
+        )
 
-    # Exclude players who were recently benched/dropped
-    if not lineups.empty and "status" in lineups.columns:
-        try:
-            latest_md = lineups["matchday"].max()
-            inactive = set(
-                lineups[
-                    (lineups["matchday"] == latest_md) &
-                    (lineups["status"].isin(["benched", "not_in_squad"]))
-                ]["player_name"].astype(str).str.strip().tolist()
-            )
-            available = available[~available["name"].astype(str).str.strip().isin(inactive)]
-        except Exception:
-            pass
+    top_in = available.nlargest(n_suggestions, "exp_pts")
+    worst_out = squad_pos.nsmallest(n_suggestions, "exp_pts")
 
-    available = available.copy()
-    available["exp_pts"] = available.apply(
-        lambda r: expected_matchday_points(r, fixtures, groups), axis=1
-    )
-    top = available.nlargest(n_suggestions, "exp_pts")
-
-    suggestions = []
-    for _, row in top.iterrows():
-        reasons = [f"expected ~{row['exp_pts']:.1f} pts/game"]
+    def row_to_dict(row, tag=""):
         pt = str(row.get("penalty_taker", "")).lower()
-        if pt in ("primary", "secondary"):
-            reasons.append(f"penalty taker ({pt})")
         spr = str(row.get("set_piece_role", "")).lower()
+        reasons = []
+        if pt in ("primary", "secondary"):
+            reasons.append(f"Penalty taker ({pt})")
         if spr not in ("no", "none", ""):
-            reasons.append(f"set pieces: {spr}")
-        fix = fixture_difficulty(str(row.get("team", "")), fixtures, groups)
-        reasons.append(f"fixture score {fix}")
-        suggestions.append({
-            "name": row["name"],
-            "position": row.get("position", ""),
+            reasons.append(f"Set pieces: {spr}")
+        team = str(row.get("team", ""))
+        if team:
+            diff = fixture_difficulty(team, fixtures, groups)
+            label, _ = difficulty_label(diff)
+            reasons.append(f"{label} fixtures (avg rank {diff:.0f})")
+        return {
+            "name": row.get("name", ""),
+            "position": str(row.get("position", "")).upper(),
             "value": row.get("value", "?"),
-            "exp_pts": row["exp_pts"],
-            "reason": " | ".join(reasons),
-        })
+            "exp_pts": round(float(row.get("exp_pts", 0)), 1),
+            "team": team,
+            "reason": "  ·  ".join(reasons) if reasons else "—",
+        }
 
-    return suggestions
+    return {
+        "out": [row_to_dict(r) for _, r in worst_out.iterrows()],
+        "in":  [row_to_dict(r) for _, r in top_in.iterrows()],
+    }
 
 
-# ── Squad overview / fixture difficulty ───────────────────────────────────────
+# ── Fixture difficulty table for squad ────────────────────────────────────────
 
-def squad_fixture_summary(
-    players: pd.DataFrame,
+def squad_fixture_table(
+    squad_df: pd.DataFrame,
     fixtures: pd.DataFrame,
     groups: pd.DataFrame,
+    next_n: int = 4,
 ) -> pd.DataFrame:
-    """Full fixture + expected-points breakdown for every player in the squad."""
-    squad = get_squad(players)
-    if squad.empty:
+    """Per-player fixture breakdown for the squad."""
+    if squad_df.empty or fixtures.empty:
         return pd.DataFrame()
 
+    unplayed = fixtures
+    if "home_score" in fixtures.columns:
+        unplayed = fixtures[
+            fixtures["home_score"].isna() | (fixtures["home_score"].astype(str).str.strip() == "")
+        ]
+
     rows = []
-    for _, p in squad.iterrows():
-        team = str(p.get("team", "")) if pd.notna(p.get("team")) else ""
-        fix_score = fixture_difficulty(team, fixtures, groups)
-        exp_pts   = expected_matchday_points(p, fixtures, groups)
-        is_cap = str(p.get("is_captain", "")).lower() in ("true", "1", "yes")
+    for _, p in squad_df.iterrows():
+        team = str(p.get("team", "")).strip()
+        exp_pts = round(float(p.get("exp_pts", 0)), 1)
+        fix_avg = fixture_difficulty(team, fixtures, groups, next_n)
+        label, _ = difficulty_label(fix_avg)
+
+        team_fx = unplayed[
+            (unplayed["home_team"].astype(str).str.strip() == team) |
+            (unplayed["away_team"].astype(str).str.strip() == team)
+        ].head(next_n)
+
+        opponents = []
+        for _, fx in team_fx.iterrows():
+            opp = fx["away_team"] if str(fx["home_team"]).strip() == team else fx["home_team"]
+            opp_rank = get_team_ranking(str(opp).strip(), groups)
+            diff_lbl, _ = difficulty_label(opp_rank)
+            opponents.append(f"{opp} ({diff_lbl})")
+
         rows.append({
-            "Player":          p.get("name", ""),
-            "Pos":             p.get("position", ""),
-            "Fixture score":   fix_score,
-            "Exp pts/game":    exp_pts,
-            "Cap pts/game":    round(exp_pts * CAPTAIN_MULTIPLIER, 1) if is_cap else "",
-            "Pen taker":       p.get("penalty_taker", "No"),
-            "Set pieces":      p.get("set_piece_role", "No"),
-            "Captain":         "✓" if is_cap else "",
+            "Player":      p.get("name", ""),
+            "Pos":         str(p.get("position", "")).upper(),
+            "Team":        team if team else "Unknown",
+            "Exp pts/g":   exp_pts,
+            "Fixtures":    difficulty_label(fix_avg)[0],
+            "Next opponents": "  →  ".join(opponents) if opponents else "—",
         })
 
     return (
         pd.DataFrame(rows)
-        .sort_values("Exp pts/game", ascending=False)
+        .sort_values("Exp pts/g", ascending=False)
         .reset_index(drop=True)
     )
 
 
-# ── Lineup validator ───────────────────────────────────────────────────────────
+# ── Transfer schedule ─────────────────────────────────────────────────────────
 
-def validate_squad(players: pd.DataFrame) -> list[str]:
+def get_transfer_schedule(
+    squad_df: pd.DataFrame,
+    all_players: pd.DataFrame,
+    fixtures: pd.DataFrame,
+    groups: pd.DataFrame,
+    transfers_used: int = 0,
+    today_str: str = "",
+) -> list[dict]:
     """
-    Return a list of rule violations for the current squad.
-    Empty list = valid squad.
+    Returns a list of transfer windows — one per upcoming matchday — with:
+      matchday, deadline_date, days_away, urgency, recommended_swaps[]
+    Each swap: {out, in, position, pts_gain, reason}
     """
-    squad = get_squad(players)
-    errors = []
+    if fixtures.empty or squad_df.empty:
+        return []
 
-    if squad.empty:
-        return ["No players marked as in_squad."]
+    import datetime
+    try:
+        today = datetime.date.fromisoformat(today_str) if today_str else datetime.date.today()
+    except ValueError:
+        today = datetime.date.today()
 
-    n = len(squad)
-    if n != SQUAD_SIZE:
-        errors.append(f"Squad has {n} players — must be exactly {SQUAD_SIZE}.")
+    # Build matchday → first fixture date
+    unplayed = fixtures.copy()
+    if "home_score" in fixtures.columns:
+        unplayed = fixtures[
+            fixtures["home_score"].isna() | (fixtures["home_score"].astype(str).str.strip() == "")
+        ]
 
-    pos_counts = squad["position"].str.upper().value_counts().to_dict()
-    gk  = pos_counts.get("GK",  0)
-    def_ = pos_counts.get("DEF", 0)
-    mid = pos_counts.get("MID", 0)
-    fwd = pos_counts.get("FWD", 0)
+    md_dates: dict[str, str] = {}
+    seen_dates: set[str] = set()
+    for _, row in unplayed.iterrows():
+        md    = str(row.get("matchday", "")).strip()
+        stage = str(row.get("stage", "")).strip()
+        d     = str(row.get("date", "")).strip()
+        if not d:
+            continue
+        # Group stage rows use numeric matchday; knockout rows have no matchday
+        if md and md not in ("nan", ""):
+            key = f"Matchday {int(float(md))}"
+        elif stage and stage not in ("Group Stage",):
+            key = stage
+        else:
+            continue
+        # Only take the earliest date per window; skip duplicate dates
+        if key not in md_dates:
+            md_dates[key] = d
+            seen_dates.add(d)
 
-    if gk != 1:
-        errors.append(f"Need exactly 1 GK (have {gk}).")
-    if not (3 <= def_ <= 5):
-        errors.append(f"Need 3–5 DEF (have {def_}).")
-    if not (3 <= mid <= 5):
-        errors.append(f"Need 3–5 MID (have {mid}).")
-    if not (1 <= fwd <= 3):
-        errors.append(f"Need 1–3 FWD (have {fwd}).")
+    transfers_remaining = MAX_TRANSFERS - transfers_used
+    budget_per_md = max(1, round(transfers_remaining / max(len(md_dates), 1)))
 
-    budget_used = squad_budget_used(squad)
-    if budget_used > BUDGET:
-        errors.append(
-            f"Budget exceeded: {budget_used:,.0f} € used of {BUDGET:,.0f} € max."
+    schedule = []
+    for md_key in sorted(md_dates.keys(), key=lambda x: md_dates[x]):
+        deadline_str = md_dates[md_key]
+        try:
+            deadline = datetime.date.fromisoformat(deadline_str)
+        except ValueError:
+            continue
+        days_away = (deadline - today).days
+        if days_away < 0:
+            continue
+
+        if days_away == 0:
+            urgency = "🔴 Today"
+        elif days_away <= 2:
+            urgency = "🟠 Soon"
+        elif days_away <= 5:
+            urgency = "🟡 Upcoming"
+        else:
+            urgency = "🟢 Ahead"
+
+        # Score squad players for THIS matchday window
+        sq = squad_df.copy()
+        sq["md_pts"] = sq.apply(
+            lambda r: expected_matchday_points(r, fixtures, groups, next_n=1), axis=1
         )
+        worst = sq.nsmallest(min(3, budget_per_md), "md_pts")
 
-    caps = squad[squad["is_captain"].astype(str).str.lower().isin(["true", "1", "yes"])]
-    if len(caps) == 0:
-        errors.append("No captain selected.")
-    elif len(caps) > 1:
-        errors.append(f"{len(caps)} players marked as captain — only 1 allowed.")
+        # Find best replacements for weakest positions
+        sq_names = set(sq["name"].astype(str))
+        swaps = []
+        for _, out_row in worst.iterrows():
+            pos = str(out_row.get("position", "")).upper()
+            replacements = all_players[
+                (~all_players["name"].astype(str).isin(sq_names)) &
+                (all_players["position"].str.upper() == pos)
+            ].copy()
+            if replacements.empty:
+                continue
+            if "exp_pts" not in replacements.columns:
+                replacements["exp_pts"] = replacements.apply(
+                    lambda r: expected_matchday_points(r, fixtures, groups, next_n=1), axis=1
+                )
+            best_in = replacements.nlargest(1, "exp_pts").iloc[0]
+            gain = round(float(best_in["exp_pts"]) - float(out_row["md_pts"]), 1)
+            if gain > 0.3:
+                team_in = str(best_in.get("team", ""))
+                diff = fixture_difficulty(team_in, fixtures, groups, next_n=1)
+                lbl, _ = difficulty_label(diff)
+                swaps.append({
+                    "out":      out_row["name"],
+                    "in":       best_in["name"],
+                    "position": pos,
+                    "pts_gain": gain,
+                    "reason":   f"{lbl} next fixture (avg opp rank {diff:.0f}) · +{gain:.1f} pts/g gain",
+                })
 
-    return errors
+        schedule.append({
+            "matchday":      md_key,
+            "deadline_date": deadline_str,
+            "days_away":     days_away,
+            "urgency":       urgency,
+            "budget":        budget_per_md,
+            "swaps":         swaps,
+        })
+
+    return schedule
+
+
+# ── Legacy helpers (kept for compatibility) ───────────────────────────────────
+
+def squad_budget_used(squad: pd.DataFrame) -> float:
+    if squad.empty or "value" not in squad.columns:
+        return 0.0
+    return sum(parse_value(v) for v in squad["value"])
