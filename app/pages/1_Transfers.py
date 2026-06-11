@@ -17,16 +17,43 @@ from logic.recommendations import (
 st.set_page_config(page_title="Transfers", page_icon="🔄", layout="wide")
 
 st.title("🔄 Transfer Planner")
-st.caption(
-    f"**{MAX_TRANSFERS} total transfers** for the whole tournament. "
-    "A matchday round spans ~7 days — you can transfer on any day within the round, "
-    "but transfers before the round's first game cover all games in that round."
+
+# ── Load data first (needed for free-selection banner) ─────────────────────────
+players  = load_csv("players.csv")
+fixtures = load_csv("fixtures.csv")
+groups   = load_csv("groups.csv")
+lineups  = load_csv("lineups.csv")
+form     = load_csv("form.csv")
+
+# Determine whether we are still in the free initial selection window
+# (before the very first game of the tournament — no transfer slot is used).
+_all_dates = sorted([
+    d for d in fixtures["date"].astype(str).str.strip().tolist()
+    if d and d not in ("nan", "")
+])
+tournament_start = _all_dates[0] if _all_dates else None
+today_date = datetime.date.today()
+in_free_period = bool(
+    tournament_start and today_date.isoformat() <= tournament_start
 )
+
+if in_free_period:
+    st.success(
+        f"⚡ **Initial squad selection is FREE** — adjust your starting 11 at no cost "
+        f"before the first game on **{tournament_start}**. "
+        "Your 35-transfer budget only starts counting once the tournament begins."
+    )
+else:
+    st.caption(
+        f"**{MAX_TRANSFERS} total transfers** for the whole tournament. "
+        "Transfers are free before the first game — the 35-slot budget starts after kickoff."
+    )
 
 # ── Transfer counter ───────────────────────────────────────────────────────────
 c1, c2, c3 = st.columns([1, 1, 2])
 with c1:
-    used = st.number_input("Transfers used", 0, MAX_TRANSFERS, 0, 1)
+    used = st.number_input("Transfers used so far", 0, MAX_TRANSFERS, 0, 1,
+                           help="Count only transfers made after the tournament started.")
 remaining = MAX_TRANSFERS - used
 with c2:
     st.metric("Remaining", remaining,
@@ -38,13 +65,7 @@ with c3:
 
 st.divider()
 
-# ── Load data & generate squad ─────────────────────────────────────────────────
-players  = load_csv("players.csv")
-fixtures = load_csv("fixtures.csv")
-groups   = load_csv("groups.csv")
-lineups  = load_csv("lineups.csv")
-form     = load_csv("form.csv")
-
+# ── Generate squad ────────────────────────────────────────────────────────────
 with st.spinner("Calculating…"):
     result = recommend_best_squad(players, fixtures, groups, lineups, form=form)
 
@@ -160,6 +181,55 @@ else:
                     for line in game_lines:
                         st.markdown(f"&nbsp;&nbsp;&nbsp;{line}", unsafe_allow_html=True)
             st.caption("⚽ = your squad has a player from this team  ·  🔴 = no coverage")
+
+st.divider()
+
+# ── Full transfer schedule (flat table) ───────────────────────────────────────
+st.markdown("## 📋 Full Transfer Schedule")
+st.caption(
+    "Every recommended transfer across all rounds in one table. "
+    "Gap 🚨 = day when no squad player plays — top priority. "
+    "Net = in-player day pts minus out-player average pts."
+)
+
+all_swaps = []
+for window in schedule:
+    for s in window["pre_round_swaps"]:
+        d_away = s["days_until"]
+        if d_away < 0:
+            when_str = "Played"
+        elif d_away == 0:
+            when_str = "Today"
+        elif d_away == 1:
+            when_str = "Tomorrow"
+        else:
+            when_str = f"In {d_away}d"
+        all_swaps.append({
+            "Date":     s["transfer_date"],
+            "When":     when_str,
+            "Round":    window["round_label"],
+            "Pos":      s["position"],
+            "OUT":      s["out"],
+            "OUT Team": s["out_team"],
+            "IN":       s["in"],
+            "IN Team":  s["in_team"],
+            "Day pts":  s["day_pts"],
+            "Net":      f"{s['pts_gain']:+.1f}",
+            "Gap":      "🚨" if s.get("is_gap_day") else "",
+        })
+
+if all_swaps:
+    sched_df = pd.DataFrame(all_swaps)
+    st.dataframe(sched_df, use_container_width=True, hide_index=True)
+    total_shown = len(all_swaps)
+    gap_count   = sum(1 for s in all_swaps if s["Gap"] == "🚨")
+    st.caption(
+        f"**{total_shown} transfers** recommended across {len(schedule)} rounds  ·  "
+        f"**{gap_count}** cover a gap day  ·  "
+        f"**{remaining}** transfer slots remaining"
+    )
+else:
+    st.info("No transfer recommendations found.")
 
 st.divider()
 
