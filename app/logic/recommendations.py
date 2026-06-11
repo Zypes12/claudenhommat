@@ -220,6 +220,71 @@ def get_team_attack_rate(team: str, form: "pd.DataFrame | None") -> float:
     return 1.0
 
 
+# ── Actual tournament results ─────────────────────────────────────────────────
+
+def compute_actual_stats(results: "pd.DataFrame | None") -> dict:
+    """
+    Derive team and player performance stats from actual tournament results.
+
+    Returns a dict with:
+      team_games    – {team → games played}
+      team_attack   – {team → actual goals scored per game}
+      team_defense  – {team → actual goals conceded per game}
+      player_goals  – {normalised_player_name → goals scored in tournament}
+
+    All values default to empty dicts when no results exist yet.
+    The calling code blends these against pre-tournament priors with weight
+    proportional to games played (prior_weight = 5 equivalent games).
+    """
+    empty: dict = {"team_games": {}, "team_attack": {}, "team_defense": {}, "player_goals": {}}
+    if results is None or (hasattr(results, "empty") and results.empty):
+        return empty
+
+    team_gf: dict[str, int] = {}
+    team_ga: dict[str, int] = {}
+    team_games: dict[str, int] = {}
+    player_goals: dict[str, int] = {}
+
+    for _, row in results.iterrows():
+        home = str(row.get("home_team", "")).strip()
+        away = str(row.get("away_team", "")).strip()
+        hs_raw = str(row.get("home_score", "")).strip()
+        as_raw = str(row.get("away_score", "")).strip()
+        if not hs_raw or not as_raw or hs_raw in ("", "nan") or as_raw in ("", "nan"):
+            continue
+        try:
+            hs = int(float(hs_raw))
+            as_ = int(float(as_raw))
+        except (ValueError, TypeError):
+            continue
+        if not home or not away or home.startswith("Winner") or home.startswith("1st") or home.startswith("2nd"):
+            continue
+
+        for t, gf, ga in [(home, hs, as_), (away, as_, hs)]:
+            team_gf[t]     = team_gf.get(t, 0) + gf
+            team_ga[t]     = team_ga.get(t, 0) + ga
+            team_games[t]  = team_games.get(t, 0) + 1
+
+        # Parse goalscorers: "Messi 35', Ronaldo (Portugal) 78', ..."
+        gs_raw = str(row.get("goalscorers", "")).strip()
+        if gs_raw and gs_raw.lower() not in ("", "nan"):
+            for entry in gs_raw.split(","):
+                name = re.sub(r"\(.*?\)", "", entry)       # remove (team)
+                name = re.sub(r"\d+[''`′]?", "", name)    # remove minute markers
+                name = name.strip()
+                if name:
+                    player_goals[_norm(name)] = player_goals.get(_norm(name), 0) + 1
+
+    team_attack  = {t: team_gf.get(t, 0) / g for t, g in team_games.items()}
+    team_defense = {t: team_ga.get(t, 0) / g for t, g in team_games.items()}
+    return {
+        "team_games":   team_games,
+        "team_attack":  team_attack,
+        "team_defense": team_defense,
+        "player_goals": player_goals,
+    }
+
+
 # ── Single-day scoring helper ─────────────────────────────────────────────────
 
 def _score_for_date(
@@ -227,6 +292,7 @@ def _score_for_date(
     day_fixtures: pd.DataFrame,
     groups: pd.DataFrame,
     form: "pd.DataFrame | None" = None,
+    actual_stats: "dict | None" = None,
 ) -> float:
     """
     Expected points for a player on one specific calendar day.
@@ -241,7 +307,7 @@ def _score_for_date(
     ]
     if team_fx.empty:
         return 0.0
-    return expected_matchday_points(player, team_fx, groups, next_n=1, form=form)
+    return expected_matchday_points(player, team_fx, groups, next_n=1, form=form, actual_stats=actual_stats)
 
 
 # ── Expected points estimation ─────────────────────────────────────────────────
@@ -252,6 +318,7 @@ def expected_matchday_points(
     groups: pd.DataFrame,
     next_n: int = 3,
     form: "pd.DataFrame | None" = None,
+    actual_stats: "dict | None" = None,
 ) -> float:
     """
     Estimate expected Futispörssi points per game over the next N fixtures.
@@ -259,13 +326,20 @@ def expected_matchday_points(
     Components:
       - Appearance (2 pts)
       - Result bonus (win/draw/loss by position)
-      - Clean sheet probability × CS points
+      - Clean sheet probability × CS points  ← blended with actual concede rate
       - GK saves flat estimate
       - DEF goals-against penalty
       - Penalty taker bonus
       - Set-piece role bonus
       - Goal/assist contribution: BASE_GOAL_RATE × opponent_factor × team_attack_factor
+        ← attack_factor and base_goal_rate blended with actual tournament data when available
         (DEF defensive MID 30% penalty applied to goal rate)
+
+    actual_stats (from compute_actual_stats):
+      When actual results exist, the model blends pre-tournament priors with tournament
+      data.  Prior weight = 5 equivalent games.  After 5 real games the split is 50/50;
+      after 10 games actual data dominates.  This makes the model self-correcting as the
+      tournament progresses.
     """
     pos = str(player.get("position", "")).strip().upper()
     if pos not in POSITION_POINTS:
@@ -303,6 +377,35 @@ def expected_matchday_points(
     # Team attack strength from qualifying form (neutral = 1.0)
     attack_factor = get_team_attack_rate(team, form)
 
+    # ── Blend priors with actual tournament data ──────────────────────────────
+    # Prior weight = 5 equivalent games.  Blending shifts toward actual data
+    # as the tournament progresses; with 0 games played nothing changes.
+    _PRIOR_GAMES = 5
+    _actual_games = 0
+    if actual_stats:
+        _actual_games = actual_stats.get("team_games", {}).get(team, 0)
+
+    if _actual_games > 0:
+        _blend = _actual_games / (_PRIOR_GAMES + _actual_games)
+
+        # Attack factor: blend prior GPG with actual GPG
+        actual_gpg_team = actual_stats.get("team_attack", {}).get(team, 0.0)  # type: ignore[union-attr]
+        prior_gpg = attack_factor * 1.8
+        blended_gpg = prior_gpg * (1 - _blend) + actual_gpg_team * _blend
+        attack_factor = min(1.8, max(0.5, blended_gpg / 1.8))
+
+        # Player goal rate: blend base rate with actual goals/game for this player
+        pnorm = _norm(str(player.get("name", "")))
+        p_goals = actual_stats.get("player_goals", {}).get(pnorm, 0)  # type: ignore[union-attr]
+        # Also try last-name-only (goalscorer data is often surname-only)
+        if p_goals == 0:
+            p_parts = pnorm.split()
+            if p_parts:
+                p_goals = actual_stats.get("player_goals", {}).get(p_parts[0], 0)  # type: ignore[union-attr]
+        if p_goals > 0:
+            actual_player_gpg = p_goals / _actual_games
+            base_goal_rate = base_goal_rate * (1 - _blend) + actual_player_gpg * _blend
+
     # ── Per-fixture loop ──────────────────────────────────────────────────────
     total_pts = 0.0
     for _, row in team_fx.iterrows():
@@ -320,10 +423,18 @@ def expected_matchday_points(
         # Result bonus
         pts += win_p * pp["win"] + draw_p * pp["draw"] + loss_p * pp["loss"]
 
-        # Clean sheet probability
+        # Clean sheet probability (prior: from win/draw model)
         cs_prob = win_p * 0.60 + draw_p * 0.20
         if is_knockout:
             cs_prob = min(0.75, cs_prob * 1.25)  # knockout games are tighter
+
+        # Blend CS probability with actual concede rate (Poisson P(0 conceded))
+        if _actual_games > 0:
+            _blend = _actual_games / (_PRIOR_GAMES + _actual_games)
+            actual_concede_gpg = actual_stats.get("team_defense", {}).get(team, 0.0)  # type: ignore[union-attr]
+            actual_cs_prob = math.exp(-max(0.1, actual_concede_gpg))
+            cs_prob = cs_prob * (1 - _blend) + actual_cs_prob * _blend
+
         pts += cs_prob * pp["clean_sheet"]
 
         # GK saves (flat estimate based on typical WC save counts)
@@ -384,10 +495,9 @@ def _pick_for_formation(
         reserve = slots_remaining * MIN_PLAYER_VALUE
         pos_budget = budget - reserve
 
-        sort_col = "_opt_pts" if "_opt_pts" in players_df.columns else "exp_pts"
         candidates = (
             players_df[players_df["position"].str.upper() == pos]
-            .sort_values(sort_col, ascending=False)
+            .sort_values("exp_pts", ascending=False)
         )
 
         selected: list[pd.Series] = []
@@ -413,6 +523,7 @@ def recommend_best_squad(
     groups: pd.DataFrame,
     lineups: pd.DataFrame,
     form: "pd.DataFrame | None" = None,
+    actual_stats: "dict | None" = None,
 ) -> dict | None:
     """
     Returns the optimal 11-player squad within budget.
@@ -433,37 +544,8 @@ def recommend_best_squad(
     # Keep only players matched to a lineup entry — non-starters are irrelevant
     enriched = enriched[enriched["team"].astype(str).str.strip() != ""].copy()
     enriched["exp_pts"] = enriched.apply(
-        lambda r: expected_matchday_points(r, fixtures, groups, form=form), axis=1
+        lambda r: expected_matchday_points(r, fixtures, groups, form=form, actual_stats=actual_stats), axis=1
     )
-
-    # Penalise players whose team doesn't play for several days so the initial
-    # free squad pick covers as many early game-days as possible.
-    # (0.15 pts per day of delay, capped at 7 days = max 1.05 pt penalty)
-    import datetime as _dt
-    _today = _dt.date.today()
-
-    def _days_to_first_game(team: str) -> int:
-        if not team or fixtures.empty:
-            return 7
-        tf = fixtures[
-            (fixtures["home_team"].astype(str).str.strip() == team) |
-            (fixtures["away_team"].astype(str).str.strip() == team)
-        ]
-        if tf.empty:
-            return 7
-        valid = []
-        for d in tf["date"].astype(str).str.strip():
-            try:
-                valid.append(_dt.date.fromisoformat(d))
-            except ValueError:
-                pass
-        if not valid:
-            return 7
-        return max(0, min(7, (min(valid) - _today).days))
-
-    enriched["_days_penalty"] = enriched["team"].apply(_days_to_first_game)
-    enriched["_opt_pts"] = enriched["exp_pts"] - enriched["_days_penalty"] * 0.15
-    enriched.drop(columns=["_days_penalty"], inplace=True)
 
     best: dict | None = None
     for formation in VALID_FORMATIONS:
@@ -501,6 +583,7 @@ def recommend_transfers(
     n_suggestions: int = 5,
     position_filter: str | None = None,
     form: "pd.DataFrame | None" = None,
+    actual_stats: "dict | None" = None,
 ) -> dict:
     """
     Given current squad, suggest transfers in and out.
@@ -520,11 +603,11 @@ def recommend_transfers(
 
     if "exp_pts" not in available.columns:
         available["exp_pts"] = available.apply(
-            lambda r: expected_matchday_points(r, fixtures, groups, form=form), axis=1
+            lambda r: expected_matchday_points(r, fixtures, groups, form=form, actual_stats=actual_stats), axis=1
         )
     if "exp_pts" not in squad_pos.columns:
         squad_pos["exp_pts"] = squad_pos.apply(
-            lambda r: expected_matchday_points(r, fixtures, groups, form=form), axis=1
+            lambda r: expected_matchday_points(r, fixtures, groups, form=form, actual_stats=actual_stats), axis=1
         )
 
     top_in  = available.nlargest(n_suggestions, "exp_pts")
@@ -621,6 +704,7 @@ def get_transfer_schedule(
     transfers_used: int = 0,
     today_str: str = "",
     form: "pd.DataFrame | None" = None,
+    actual_stats: "dict | None" = None,
 ) -> list[dict]:  # noqa: C901
     """
     Returns one entry per matchday ROUND (not per day).
@@ -714,7 +798,7 @@ def get_transfer_schedule(
     if "exp_pts" not in all_players.columns:
         all_players = all_players.copy()
         all_players["exp_pts"] = all_players.apply(
-            lambda r: expected_matchday_points(r, fixtures, groups, next_n=3, form=form), axis=1
+            lambda r: expected_matchday_points(r, fixtures, groups, next_n=3, form=form, actual_stats=actual_stats), axis=1
         )
     sq_names = set(squad_df["name"].astype(str).str.strip())
 
@@ -813,7 +897,7 @@ def get_transfer_schedule(
 
             # Score them for this specific day
             avail_today["day_pts"] = avail_today.apply(
-                lambda r: _score_for_date(r, day_fx, groups, form), axis=1
+                lambda r: _score_for_date(r, day_fx, groups, form, actual_stats=actual_stats), axis=1
             )
             avail_today = avail_today[avail_today["day_pts"] > 1.5]
             if avail_today.empty:
@@ -836,7 +920,7 @@ def get_transfer_schedule(
                 if "exp_pts" not in out_cands.columns:
                     out_cands = out_cands.copy()
                     out_cands["exp_pts"] = out_cands.apply(
-                        lambda r: expected_matchday_points(r, fixtures, groups, form=form), axis=1
+                        lambda r: expected_matchday_points(r, fixtures, groups, form=form, actual_stats=actual_stats), axis=1
                     )
                 worst_out = out_cands.nsmallest(1, "exp_pts").iloc[0]
 

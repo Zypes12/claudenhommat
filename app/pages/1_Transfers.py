@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.data import load_csv
 from logic.recommendations import (
     recommend_best_squad, recommend_transfers, get_transfer_schedule,
-    fixture_difficulty, difficulty_label, display_name,
+    fixture_difficulty, difficulty_label, display_name, compute_actual_stats,
     _enrich_with_team, BUDGET, MAX_TRANSFERS, POS_COLORS,
 )
 
@@ -24,6 +24,8 @@ fixtures = load_csv("fixtures.csv")
 groups   = load_csv("groups.csv")
 lineups  = load_csv("lineups.csv")
 form     = load_csv("form.csv")
+results  = load_csv("results.csv")
+actual_stats = compute_actual_stats(results)
 
 # Determine whether we are still in the free initial selection window
 # (before the very first game of the tournament — no transfer slot is used).
@@ -67,7 +69,7 @@ st.divider()
 
 # ── Generate squad ────────────────────────────────────────────────────────────
 with st.spinner("Calculating…"):
-    result = recommend_best_squad(players, fixtures, groups, lineups, form=form)
+    result = recommend_best_squad(players, fixtures, groups, lineups, form=form, actual_stats=actual_stats)
 
 if result is None:
     st.warning("Not enough data. Check the **Data** page.")
@@ -86,7 +88,7 @@ st.caption(
     "Mid-round transfers are also valid but cost the same 1 transfer each."
 )
 
-schedule = get_transfer_schedule(squad, enriched, fixtures, groups, used, today, form=form)
+schedule = get_transfer_schedule(squad, enriched, fixtures, groups, used, today, form=form, actual_stats=actual_stats)
 
 if not schedule:
     st.info("No upcoming rounds found.")
@@ -133,9 +135,12 @@ else:
                         when = f"in **{d_away_s} days**"
                     is_gap = s["transfer_date"] in uncovered
 
+                    is_free = bool(tournament_start and s["transfer_date"] <= tournament_start)
+                    free_badge = "  ⚡ *FREE adjustment (before first game)*" if is_free else ""
                     st.markdown(
                         f"📅 Transfer {when} — `{s['transfer_date']}`"
-                        + ("  🚨 *covers gap day*" if is_gap else ""),
+                        + ("  🚨 *covers gap day*" if is_gap else "")
+                        + free_badge,
                         unsafe_allow_html=False,
                     )
                     c1, c2 = st.columns(2)
@@ -204,9 +209,11 @@ for window in schedule:
             when_str = "Tomorrow"
         else:
             when_str = f"In {d_away}d"
+        is_free_swap = bool(tournament_start and s["transfer_date"] <= tournament_start)
         all_swaps.append({
             "Date":     s["transfer_date"],
             "When":     when_str,
+            "Free":     "⚡" if is_free_swap else "",
             "Round":    window["round_label"],
             "Pos":      s["position"],
             "OUT":      s["out"],
@@ -242,7 +249,7 @@ pos_filter = ca.radio("Position", ["All", "GK", "DEF", "MID", "FWD"], horizontal
 n = cb.slider("Suggestions per side", 3, 10, 5)
 
 pf = None if pos_filter == "All" else pos_filter
-transfers = recommend_transfers(squad, enriched, fixtures, groups, n_suggestions=n, position_filter=pf, form=form)
+transfers = recommend_transfers(squad, enriched, fixtures, groups, n_suggestions=n, position_filter=pf, form=form, actual_stats=actual_stats)
 
 col_out, col_in = st.columns(2)
 

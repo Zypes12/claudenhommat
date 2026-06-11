@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from utils.data import load_csv
 from logic.recommendations import (
     recommend_best_squad, fixture_difficulty, difficulty_label,
-    squad_fixture_table, display_name,
+    squad_fixture_table, display_name, compute_actual_stats,
     BUDGET, CAPTAIN_MULTIPLIER, MAX_TRANSFERS, POS_COLORS,
 )
 
@@ -49,6 +49,8 @@ fixtures = load_csv("fixtures.csv")
 groups   = load_csv("groups.csv")
 lineups  = load_csv("lineups.csv")
 form     = load_csv("form.csv")
+results  = load_csv("results.csv")
+actual_stats = compute_actual_stats(results)
 
 # ── Header ─────────────────────────────────────────────────────────────────────
 st.title("⚽ Futispörssi  ·  World Cup 2026")
@@ -72,7 +74,7 @@ st.divider()
 
 # ── Generate recommendation ────────────────────────────────────────────────────
 with st.spinner("Calculating best squad…"):
-    result = recommend_best_squad(players, fixtures, groups, lineups, form=form)
+    result = recommend_best_squad(players, fixtures, groups, lineups, form=form, actual_stats=actual_stats)
 
 if result is None:
     st.warning(
