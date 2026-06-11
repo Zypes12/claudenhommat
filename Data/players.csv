@@ -439,7 +439,7 @@ Hernandez Th�o,365 000 �,DEF,No,No,No,False,False
 Konat� Ibrahima,355 000 �,DEF,No,No,No,False,False
 Kound� Jules,365 000 �,DEF,No,No,No,False,False
 Lacroix Maxence,345 000 �,DEF,No,No,No,False,False
-Saliba William,360 000 �,DEF,No,No,No,False,False
+Saliba William,360 000 �,DEF,No,No,No,True,False
 Upamecano Dayot,360 000 �,DEF,No,No,No,False,False
 Ekdal Hjalmar,260 000 �,DEF,No,No,No,False,False
 Gudmundsson Gabriel,280 000 �,DEF,No,No,No,False,False
@@ -492,7 +492,7 @@ C�mert Eray,290 000 �,DEF,No,No,No,False,False
 Elvedi Nico,300 000 �,DEF,No,No,No,False,False
 Jaquez Luca,280 000 �,DEF,No,No,No,False,False
 Muheim Miro,290 000 �,DEF,No,No,No,False,False
-Rodriguez Ricardo,305 000 �,DEF,No,No,No,True,False
+Rodriguez Ricardo,305 000 �,DEF,No,No,No,False,False
 Widmer Silvan,300 000 �,DEF,No,No,No,False,False
 Chaloupek �t?p�n,270 000 �,DEF,No,No,No,False,False
 Coufal Vladim�r,295 000 �,DEF,No,No,Corners,False,False
@@ -791,7 +791,7 @@ Eust�quio Stephen,280 000 �,MID,No,No,No,False,False
 Kon� Isma�l,290 000 �,MID,No,No,No,False,False
 Millar Liam,280 000 �,MID,No,No,No,False,False
 Osorio Jonathan,280 000 �,MID,No,No,No,False,False
-Saliba Nathan,285 000 �,MID,No,No,No,True,False
+Saliba Nathan,285 000 �,MID,No,No,No,False,False
 Shaffelburg Jacob,290 000 �,MID,No,No,No,False,False
 Arcanjo Telmo,230 000 �,MID,No,No,No,False,False
 Cabral Jovane,240 000 �,MID,No,No,Both,False,False
@@ -1169,7 +1169,7 @@ Matanovi? Igor,300 000 �,FWD,No,No,No,False,False
 Musa Petar,285 000 �,FWD,No,No,No,False,False
 El Kaabi Ayoub,320 000 �,FWD,No,No,No,False,False
 Rahimi Soufiane,290 000 �,FWD,Yes,Secondary,No,False,False
-Gim�nez Santiago,325 000 �,FWD,No,No,No,False,False
+Gim�nez Santiago,325 000 �,FWD,No,No,No,True,False
 Gonz�lez Armando,295 000 �,FWD,No,No,No,False,False
 Jim�nez Ra�l,340 000 �,FWD,No,No,No,False,False
 Mart�nez Guillermo,290 000 �,FWD,No,No,No,False,False
