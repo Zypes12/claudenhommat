@@ -213,6 +213,30 @@ def get_team_attack_rate(team: str, form: "pd.DataFrame | None") -> float:
     return 1.0
 
 
+# ── Single-day scoring helper ─────────────────────────────────────────────────
+
+def _score_for_date(
+    player: pd.Series,
+    day_fixtures: pd.DataFrame,
+    groups: pd.DataFrame,
+    form: "pd.DataFrame | None" = None,
+) -> float:
+    """
+    Expected points for a player on one specific calendar day.
+    Returns 0.0 if the player's team has no game that day.
+    """
+    team = str(player.get("team", "")).strip()
+    if not team or day_fixtures.empty:
+        return 0.0
+    team_fx = day_fixtures[
+        (day_fixtures["home_team"].astype(str).str.strip() == team) |
+        (day_fixtures["away_team"].astype(str).str.strip() == team)
+    ]
+    if team_fx.empty:
+        return 0.0
+    return expected_matchday_points(player, team_fx, groups, next_n=1, form=form)
+
+
 # ── Expected points estimation ─────────────────────────────────────────────────
 
 def expected_matchday_points(
@@ -689,66 +713,149 @@ def get_transfer_schedule(
         else:
             urgency = "🟢 Upcoming"
 
-        # Score squad specifically for this round's fixtures
-        round_fixture_dates = set(sorted_dates)
-        round_fx = unplayed[unplayed["date"].astype(str).str.strip().isin(round_fixture_dates)]
+        # ── Day-specific transfer opportunities ───────────────────────────────
+        # For each future day in this round:
+        #   1. Find which squad players play that day
+        #   2. Find best available players who play that day
+        #   3. Match them against same-position squad players who DON'T play that day
+        #   4. Compare in-player's day_pts vs out-player's day_pts (0 if they don't play)
+        # Never transfer out a player who plays the same day as the in-player.
 
         sq = squad_df.copy()
-        sq["round_pts"] = sq.apply(
-            lambda r: expected_matchday_points(
-                r,
-                round_fx if not round_fx.empty else fixtures,
-                groups,
-                next_n=len(sorted_dates),
-                form=form,
-            ),
-            axis=1,
-        )
 
-        # Rule: never swap out someone who plays within 2 days of today
-        sq_eligible = sq[~sq["team"].astype(str).str.strip().isin(teams_playing_soon)].copy()
-        sq_eligible["_prio"] = sq_eligible["position"].str.upper().map(
-            lambda p: _POS_PRIORITY.get(p, 2)
-        )
-        # Sort: FWD/MID first (lower priority number), then by worst round_pts
-        worst = sq_eligible.sort_values(["_prio", "round_pts"]).head(min(3, per_round))
+        # Identify coverage gaps: days in this round where no squad player has a game
+        uncovered_days: list[str] = []
+        for d_str in sorted_dates:
+            try:
+                d_date_obj = datetime.date.fromisoformat(d_str)
+            except ValueError:
+                continue
+            day_fx = unplayed[unplayed["date"].astype(str).str.strip() == d_str]
+            teams_today = set()
+            for _, fx in day_fx.iterrows():
+                teams_today.add(str(fx.get("home_team", "")).strip())
+                teams_today.add(str(fx.get("away_team", "")).strip())
+            if not sq["team"].astype(str).str.strip().isin(teams_today).any():
+                uncovered_days.append(d_str)
 
-        swaps = []
-        for _, out_row in worst.iterrows():
-            pos     = str(out_row.get("position", "")).upper()
-            out_val = parse_value(out_row.get("value", 0))
-            candidates = all_players[
-                (~all_players["name"].astype(str).str.strip().isin(sq_names)) &
-                (all_players["position"].str.upper() == pos)
-            ].copy()
-            if candidates.empty:
+        # Collect all day-specific opportunities (one candidate per day per position)
+        opportunities: list[dict] = []
+        for d_str in sorted_dates:
+            try:
+                d_date_obj = datetime.date.fromisoformat(d_str)
+            except ValueError:
+                continue
+            days_until = (d_date_obj - today).days
+            if days_until < 0:
+                continue  # already played
+
+            day_fx = unplayed[unplayed["date"].astype(str).str.strip() == d_str]
+            if day_fx.empty:
                 continue
 
-            # Small bonus for more expensive in-players (budget maximisation strategy)
-            candidates["_score"] = candidates["exp_pts"] + (
-                candidates["value"].apply(parse_value) / 10_000_000
-            )
-            best_in = candidates.nlargest(1, "_score").iloc[0]
-            gain = round(float(best_in["exp_pts"]) - float(out_row.get("round_pts", 0)), 1)
+            teams_today: set[str] = set()
+            for _, fx in day_fx.iterrows():
+                teams_today.add(str(fx.get("home_team", "")).strip())
+                teams_today.add(str(fx.get("away_team", "")).strip())
 
-            if gain > 0.1:
-                team_in = str(best_in.get("team", ""))
-                diff = fixture_difficulty(team_in, fixtures, groups, next_n=3)
-                lbl, _ = difficulty_label(diff)
-                in_val = parse_value(best_in.get("value", 0))
-                if in_val > out_val + 50_000:
-                    value_note = f"  ·  ↑ {in_val/1000:.0f}k (was {out_val/1000:.0f}k)"
-                elif in_val < out_val - 50_000:
-                    value_note = f"  ·  ↓ cheaper {in_val/1000:.0f}k"
-                else:
-                    value_note = ""
-                swaps.append({
-                    "out":      display_name(str(out_row["name"])),
-                    "in":       display_name(str(best_in["name"])),
-                    "position": pos,
-                    "pts_gain": gain,
-                    "reason":   f"{lbl} fixtures  ·  +{gain:.1f} pts/g{value_note}",
+            # Squad split: playing today vs not
+            sq_playing = sq[sq["team"].astype(str).str.strip().isin(teams_today)]
+            sq_not_playing = sq[~sq["team"].astype(str).str.strip().isin(teams_today)]
+
+            if sq_not_playing.empty:
+                # Every squad player already plays today — don't break coverage to swap
+                continue
+
+            # Available players playing today (not in squad)
+            avail_today = all_players[
+                all_players["team"].astype(str).str.strip().isin(teams_today) &
+                ~all_players["name"].astype(str).str.strip().isin(sq_names)
+            ].copy()
+            if avail_today.empty:
+                continue
+
+            # Score them for this specific day
+            avail_today["day_pts"] = avail_today.apply(
+                lambda r: _score_for_date(r, day_fx, groups, form), axis=1
+            )
+            avail_today = avail_today[avail_today["day_pts"] > 1.5]
+            if avail_today.empty:
+                continue
+
+            # Per-position: find the best upgrade
+            for pos in ["FWD", "MID", "DEF", "GK"]:
+                in_cands = avail_today[avail_today["position"].str.upper() == pos]
+                # Only transfer out a player who does NOT play that day
+                out_cands = sq_not_playing[sq_not_playing["position"].str.upper() == pos]
+
+                if in_cands.empty or out_cands.empty:
+                    continue
+
+                # Best available player for today
+                best_in = in_cands.nlargest(1, "day_pts").iloc[0]
+
+                # Worst squad player of the same position not playing today
+                # Use overall exp_pts as their "value" — we give that up by swapping them out
+                if "exp_pts" not in out_cands.columns:
+                    out_cands = out_cands.copy()
+                    out_cands["exp_pts"] = out_cands.apply(
+                        lambda r: expected_matchday_points(r, fixtures, groups, form=form), axis=1
+                    )
+                worst_out = out_cands.nsmallest(1, "exp_pts").iloc[0]
+
+                day_pts_in = float(best_in["day_pts"])
+                # Out-player scores 0 today (they don't play); we compare day gain vs their avg
+                out_avg = float(worst_out.get("exp_pts", 0))
+                gain = round(day_pts_in - out_avg, 1)  # net pts/game value change
+
+                if day_pts_in < 2.0:
+                    continue
+
+                in_val  = parse_value(best_in.get("value", 0))
+                out_val = parse_value(worst_out.get("value", 0))
+                value_note = (
+                    f"  ·  ↑ {in_val/1000:.0f}k" if in_val > out_val + 50_000 else ""
+                )
+
+                is_gap = d_str in uncovered_days
+
+                # Only suggest if in-player's day pts beats out-player's average.
+                # Exception: always suggest for coverage-gap days (no squad player plays)
+                # because gaining any pts > giving up 0 for that day.
+                if gain <= 0 and not is_gap:
+                    continue
+
+                opportunities.append({
+                    "transfer_date":  d_str,
+                    "days_until":     days_until,
+                    "out":            display_name(str(worst_out["name"])),
+                    "out_team":       str(worst_out.get("team", "")),
+                    "in":             display_name(str(best_in["name"])),
+                    "in_team":        str(best_in.get("team", "")),
+                    "position":       pos,
+                    "day_pts":        round(day_pts_in, 1),
+                    "pts_gain":       gain,
+                    "is_gap_day":     is_gap,
+                    "reason":         (
+                        f"Plays {d_str}  ·  ~{day_pts_in:.1f} pts  ·  "
+                        f"out-player avg {out_avg:.1f}{value_note}"
+                    ),
                 })
+
+        # Sort: coverage-gap days first (uncovered = urgent), then by day_pts descending
+        # Deduplicate out-players — each squad player can only be transferred out once
+        opportunities.sort(key=lambda x: (not x["is_gap_day"], -x["day_pts"], x["transfer_date"]))
+        seen_out: set[str] = set()
+        swaps: list[dict] = []
+        for opp in opportunities:
+            if opp["out"] in seen_out:
+                continue
+            seen_out.add(opp["out"])
+            swaps.append(opp)
+            if len(swaps) >= max(3, per_round):
+                break
+        # Final sort: chronological so the UI shows nearest first
+        swaps.sort(key=lambda x: x["transfer_date"])
 
         # Day-by-day breakdown with squad markers
         daily_games = []
@@ -782,6 +889,7 @@ def get_transfer_schedule(
             "days_to_start":       days_to_start,
             "urgency":             urgency,
             "suggested_transfers": per_round,
+            "uncovered_days":      uncovered_days,
             "pre_round_swaps":     swaps,
             "daily_games":         daily_games,
         })

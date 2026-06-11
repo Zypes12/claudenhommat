@@ -91,33 +91,63 @@ else:
             f"·  recommended transfers: **{n_swaps}**",
             expanded=(days_start <= 1),
         ):
-            # Pre-round swap recommendations
-            st.markdown("**Recommended pre-round transfers:**")
+            uncovered = window.get("uncovered_days", [])
+            if uncovered:
+                st.error(
+                    "⚠️ **Coverage gaps** — no squad player plays on: "
+                    + "  |  ".join(uncovered)
+                    + "  ← priority transfer targets"
+                )
+
+            # Day-specific transfer suggestions
+            st.markdown("**Recommended transfers:**")
             if swaps:
-                rows = [{
-                    "OUT ↩️": s["out"],
-                    "IN ✅":  s["in"],
-                    "Pos":    s["position"],
-                    "Gain":   f"+{s['pts_gain']:.1f} pts/g",
-                    "Reason": s["reason"],
-                } for s in swaps]
-                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                for s in swaps:
+                    d_away_s = s["days_until"]
+                    if d_away_s == 0:
+                        when = "**TODAY** before kickoff"
+                    elif d_away_s == 1:
+                        when = "**tomorrow**"
+                    else:
+                        when = f"in **{d_away_s} days**"
+                    is_gap = s["transfer_date"] in uncovered
+
+                    st.markdown(
+                        f"📅 Transfer {when} — `{s['transfer_date']}`"
+                        + ("  🚨 *covers gap day*" if is_gap else ""),
+                        unsafe_allow_html=False,
+                    )
+                    c1, c2 = st.columns(2)
+                    c1.markdown(
+                        f"↩️ **OUT:** {s['out']}  \n"
+                        f"*{s['out_team']} — no game this day*"
+                    )
+                    c2.markdown(
+                        f"✅ **IN:** {s['in']}  \n"
+                        f"*{s['in_team']} — plays {s['transfer_date']}*  ·  "
+                        f"**~{s['day_pts']} pts**"
+                    )
+                    st.caption(s["reason"])
+                    st.markdown("---")
             else:
                 st.success("No clear gains — hold your transfers for this round.")
 
             # Day-by-day game schedule
-            st.markdown("**Game-day schedule within this round:**")
+            st.markdown("**Game-day schedule:**")
             for day_info in daily:
                 d_str   = day_info["date"]
                 d_away  = day_info["days_away"]
                 games   = day_info["games"]
 
+                has_squad = any(g["squad_home"] or g["squad_away"] for g in games)
+                gap_flag = "  🔴 *no squad player!*" if not has_squad else ""
+
                 if d_away < 0:
                     day_label = f"~~{d_str}~~ (played)"
                 elif d_away == 0:
-                    day_label = f"**{d_str} — TODAY**"
+                    day_label = f"**{d_str} — TODAY**{gap_flag}"
                 else:
-                    day_label = f"{d_str}  ({d_away} day{'s' if d_away != 1 else ''} away)"
+                    day_label = f"{d_str}  ({d_away}d){gap_flag}"
 
                 game_lines = []
                 for g in games:
@@ -129,7 +159,7 @@ else:
                     st.markdown(f"*{day_label}*")
                     for line in game_lines:
                         st.markdown(f"&nbsp;&nbsp;&nbsp;{line}", unsafe_allow_html=True)
-            st.caption("⚽ = your squad has a player from this team")
+            st.caption("⚽ = your squad has a player from this team  ·  🔴 = no coverage")
 
 st.divider()
 
