@@ -108,21 +108,28 @@ def _enrich_with_team(players: pd.DataFrame, lineups: pd.DataFrame) -> pd.DataFr
         key = _norm(str(row["player_name"]))
         lineup_map[key] = str(row["team"]).strip()
 
+    # Find last names that appear for more than one team — skip last-name-only
+    # matching for these to avoid cross-team collisions (e.g. Mendes → Portugal
+    # when the player is Ryan Mendes from Cape Verde).
+    last_to_teams: dict[str, set] = {}
+    for key, team in lineup_map.items():
+        last = key.split()[0] if key.split() else key
+        last_to_teams.setdefault(last, set()).add(team)
+    ambiguous_last: set[str] = {k for k, v in last_to_teams.items() if len(v) > 1}
+
     def find_team(player_name: str) -> str:
         norm_player = _norm(player_name)
         parts = norm_player.split()
 
-        # 1. Exact full-name match
+        # 1. Exact full-name match (most reliable)
         if norm_player in lineup_map:
             return lineup_map[norm_player]
 
-        # 2. Last-name-only (players.csv stores "LastName FirstName")
-        #    Avoids first-name collisions (e.g. "David" matching Jonathan David/Canada
-        #    for Raum/Alaba).
-        if parts and parts[0] in lineup_map:
+        # 2. Last-name-only — skip if the surname is shared across multiple teams
+        if parts and parts[0] in lineup_map and parts[0] not in ambiguous_last:
             return lineup_map[parts[0]]
 
-        # 3. Compound last name (e.g. "De Bruyne", "Van Dijk")
+        # 3. Compound last name (e.g. "De Bruyne", "Van Dijk", "El Kaabi")
         if len(parts) >= 2:
             compound = parts[0] + " " + parts[1]
             if compound in lineup_map:
@@ -377,9 +384,10 @@ def _pick_for_formation(
         reserve = slots_remaining * MIN_PLAYER_VALUE
         pos_budget = budget - reserve
 
+        sort_col = "_opt_pts" if "_opt_pts" in players_df.columns else "exp_pts"
         candidates = (
             players_df[players_df["position"].str.upper() == pos]
-            .sort_values("exp_pts", ascending=False)
+            .sort_values(sort_col, ascending=False)
         )
 
         selected: list[pd.Series] = []
@@ -427,6 +435,35 @@ def recommend_best_squad(
     enriched["exp_pts"] = enriched.apply(
         lambda r: expected_matchday_points(r, fixtures, groups, form=form), axis=1
     )
+
+    # Penalise players whose team doesn't play for several days so the initial
+    # free squad pick covers as many early game-days as possible.
+    # (0.15 pts per day of delay, capped at 7 days = max 1.05 pt penalty)
+    import datetime as _dt
+    _today = _dt.date.today()
+
+    def _days_to_first_game(team: str) -> int:
+        if not team or fixtures.empty:
+            return 7
+        tf = fixtures[
+            (fixtures["home_team"].astype(str).str.strip() == team) |
+            (fixtures["away_team"].astype(str).str.strip() == team)
+        ]
+        if tf.empty:
+            return 7
+        valid = []
+        for d in tf["date"].astype(str).str.strip():
+            try:
+                valid.append(_dt.date.fromisoformat(d))
+            except ValueError:
+                pass
+        if not valid:
+            return 7
+        return max(0, min(7, (min(valid) - _today).days))
+
+    enriched["_days_penalty"] = enriched["team"].apply(_days_to_first_game)
+    enriched["_opt_pts"] = enriched["exp_pts"] - enriched["_days_penalty"] * 0.15
+    enriched.drop(columns=["_days_penalty"], inplace=True)
 
     best: dict | None = None
     for formation in VALID_FORMATIONS:

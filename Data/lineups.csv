@@ -1,4 +1,4 @@
-Team,Player Name,Position,Formation
+team,player_name,position,formation
 Mexico,Rangel,GK,4-3-3
 Mexico,Reyes,RB,4-3-3
 Mexico,Montes,CB,4-3-3
@@ -10,7 +10,7 @@ Mexico,Mora,CM,4-3-3
 Mexico,Alvarado,RW,4-3-3
 Mexico,Jimenez,ST,4-3-3
 Mexico,Gimenez,LW,4-3-3
-South Africa,Williams,GK,4-3-3
+South Africa,Williams Ronwen,GK,4-3-3
 South Africa,Modiba,RB,4-3-3
 South Africa,Mbokazi,CB,4-3-3
 South Africa,Sibisi,CB,4-3-3
@@ -83,7 +83,7 @@ Switzerland,Akanji,CB,4-5-1
 Switzerland,Rodriguez,LB,4-5-1
 Switzerland,Xhaka,CM,4-5-1
 Switzerland,Freuler,CM,4-5-1
-Switzerland,Vargas,RW,4-5-1
+Switzerland,Vargas Ruben,RW,4-5-1
 Switzerland,Rieder,AM,4-5-1
 Switzerland,Ndoye,LW,4-5-1
 Switzerland,Embolo,ST,4-5-1
@@ -120,7 +120,7 @@ Haiti,Jean-Jaques,CM,4-4-2
 Haiti,Providence,LM,4-4-2
 Haiti,Isidor,ST,4-4-2
 Haiti,Nazon,ST,4-4-2
-Scotland,Gordon,GK,4-4-2
+Scotland,Gordon Craig,GK,4-4-2
 Scotland,Hickey,RB,4-4-2
 Scotland,Souttar,CB,4-4-2
 Scotland,McKenna,CB,4-4-2
@@ -317,7 +317,7 @@ Spain,Rodri,CM,4-3-3
 Spain,Pedri,CM,4-3-3
 Spain,Yamal,RW,4-3-3
 Spain,Oryazabal,ST,4-3-3
-Spain,Williams,LW,4-3-3
+Spain,Williams Nico,LW,4-3-3
 Cape Verde,Vozinha,GK,4-3-3
 Cape Verde,Moreira,RB,4-3-3
 Cape Verde,Costa,CB,4-3-3
@@ -328,7 +328,7 @@ Cape Verde,Pina,CM,4-3-3
 Cape Verde,Duarte,CM,4-3-3
 Cape Verde,Cabral,RW,4-3-3
 Cape Verde,Livramento,ST,4-3-3
-Cape Verde,Mendes,LW,4-3-3
+Cape Verde,Mendes Ryan,LW,4-3-3
 Saudi Arabia,Al Aqidi,GK,4-2-3-1
 Saudi Arabia,Abdulhamid,RB,4-2-3-1
 Saudi Arabia,Al Tambakti,CB,4-2-3-1
@@ -356,7 +356,7 @@ France,Kounde,RB,4-2-3-1
 France,Upamecano,CB,4-2-3-1
 France,Saliba,CB,4-2-3-1
 France,Digne,LB,4-2-3-1
-France,Kone,DM,4-2-3-1
+France,Kone Ibrahima,DM,4-2-3-1
 France,Tchouameni,DM,4-2-3-1
 France,Dembele,RW,4-2-3-1
 France,Olise,AM,4-2-3-1
@@ -439,11 +439,11 @@ Jordan,Al Rawabdeh,CM,5-2-3
 Jordan,Tamari,RW,5-2-3
 Jordan,Olwan,ST,5-2-3
 Jordan,Al Mardi,LW,5-2-3
-Portugal,Costa,GK,4-3-3
+Portugal,Costa Diogo,GK,4-3-3
 Portugal,Cancelo,RB,4-3-3
 Portugal,Inacio,CB,4-3-3
 Portugal,Dias,CB,4-3-3
-Portugal,Mendes,LB,4-3-3
+Portugal,Mendes Nuno,LB,4-3-3
 Portugal,Vitinha,CM,4-3-3
 Portugal,Joao Neves,CM,4-3-3
 Portugal,Fernandes,CM,4-3-3
@@ -480,7 +480,7 @@ Colombia,Mojica,LB,4-2-3-1
 Colombia,Lerma,DM,4-2-3-1
 Colombia,Rios,DM,4-2-3-1
 Colombia,Arias,RW,4-2-3-1
-Colombia,Rodriguez,AM,4-2-3-1
+Colombia,Rodriguez James,AM,4-2-3-1
 Colombia,Diaz,LW,4-2-3-1
 Colombia,Suarez,ST,4-2-3-1
 England,Pickford,GK,4-2-3-1
@@ -492,7 +492,7 @@ England,Anderson,DM,4-2-3-1
 England,Rice,DM,4-2-3-1
 England,Saka,RW,4-2-3-1
 England,Rogers,AM,4-2-3-1
-England,Gordon,LW,4-2-3-1
+England,Gordon Anthony,LW,4-2-3-1
 England,Kane,ST,4-2-3-1
 Croatia,Livakovic,GK,4-2-3-1
 Croatia,Stanisic,RB,4-2-3-1
@@ -515,4 +515,4 @@ Ghana,Yirenkyi,DM,4-2-3-1
 Ghana,Fatawu,RW,4-2-3-1
 Ghana,Ayew,AM,4-2-3-1
 Ghana,Semenyo,LW,4-2-3-1
-Ghana,Williams,ST,4-2-3-1
+Ghana,Williams Inaki,ST,4-2-3-1
