@@ -171,7 +171,7 @@ Italiano Jacob,235 000 �,DEF,No,No,No,False,False
 Souttar Harry,260 000 �,DEF,No,No,No,False,False
 Trewin Kai,235 000 �,DEF,No,No,No,False,False
 Castagne Timothy,345 000 �,DEF,No,No,No,False,False
-De Cuyper Maxim,350 000 �,DEF,No,No,Corners,True,False
+De Cuyper Maxim,350 000 �,DEF,No,No,Corners,False,False
 De Winter Koni,320 000 �,DEF,No,No,No,False,False
 Debast Zeno,340 000 �,DEF,No,No,No,False,False
 Mechele Brandon,325 000 �,DEF,No,No,No,False,False
@@ -276,7 +276,7 @@ Dumfries Denzel,365 000 �,DEF,No,No,No,False,False
 Hato Jorrel,330 000 �,DEF,No,No,No,False,False
 Timber Jurri�n,350 000 �,DEF,No,No,No,False,False
 van de Ven Micky,350 000 �,DEF,No,No,No,False,False
-van Dijk Virgil,355 000 �,DEF,No,No,No,False,False
+van Dijk Virgil,355 000 �,DEF,No,No,No,True,False
 van Hecke Jan Paul,335 000 �,DEF,No,No,No,False,False
 Wieffer Mats,340 000 �,DEF,No,No,No,False,False
 Ali Hussein,225 000 �,DEF,No,No,No,False,False
@@ -439,7 +439,7 @@ Hernandez Th�o,365 000 �,DEF,No,No,No,False,False
 Konat� Ibrahima,355 000 �,DEF,No,No,No,False,False
 Kound� Jules,365 000 �,DEF,No,No,No,False,False
 Lacroix Maxence,345 000 �,DEF,No,No,No,False,False
-Saliba William,360 000 �,DEF,No,No,No,True,False
+Saliba William,360 000 �,DEF,No,No,No,False,False
 Upamecano Dayot,360 000 �,DEF,No,No,No,False,False
 Ekdal Hjalmar,260 000 �,DEF,No,No,No,False,False
 Gudmundsson Gabriel,280 000 �,DEF,No,No,No,False,False
@@ -452,7 +452,7 @@ Stroud Elliot,255 000 �,DEF,No,No,No,False,False
 Svensson Daniel,280 000 �,DEF,No,No,No,False,False
 Anton Waldemar,345 000 �,DEF,No,No,No,False,False
 Brown Nathaniel,340 000 �,DEF,No,No,No,False,False
-Kimmich Joshua,365 000 �,DEF,Yes,Secondary,Corners,False,False
+Kimmich Joshua,365 000 �,DEF,Yes,Secondary,Corners,True,False
 Raum David,360 000 �,DEF,No,No,Both,False,False
 R�diger Antonio,360 000 �,DEF,No,No,No,False,False
 Schlotterbeck Nico,355 000 �,DEF,No,No,No,False,False
@@ -486,7 +486,7 @@ Ralston Anthony,280 000 �,DEF,No,No,No,False,False
 Robertson Andy,295 000 �,DEF,No,No,Corners,False,False
 Souttar John,270 000 �,DEF,No,No,No,False,False
 Tierney Kieran,290 000 �,DEF,No,No,No,False,False
-Akanji Manuel,300 000 �,DEF,No,No,No,False,False
+Akanji Manuel,300 000 �,DEF,No,No,No,True,False
 Amenda Aur�le,280 000 �,DEF,No,No,No,False,False
 C�mert Eray,290 000 �,DEF,No,No,No,False,False
 Elvedi Nico,300 000 �,DEF,No,No,No,False,False
@@ -612,13 +612,13 @@ Memi? Amar,290 000 �,MID,No,No,No,False,False
 Tahirovi? Benjamin,280 000 �,MID,No,No,Free kicks,False,False
 Casemiro,340 000 �,MID,No,No,No,False,False
 Fabinho,315 000 �,MID,No,No,No,False,False
-Guimar�es Bruno,360 000 �,MID,No,No,No,False,False
+Guimar�es Bruno,360 000 �,MID,No,No,No,True,False
 Henrique Luiz,355 000 �,MID,No,No,No,False,False
 J�nior Vin�cius,410 000 �,MID,No,No,No,False,False
 Martinelli Gabriel,360 000 �,MID,No,No,No,False,False
 Neymar,375 000 �,MID,Yes,Secondary,No,False,False
 Paquet� Lucas,355 000 �,MID,No,No,No,False,False
-Raphinha,405 000 �,MID,Yes,Primary,Both,False,False
+Raphinha,405 000 �,MID,Yes,Primary,Both,True,False
 Rayan,340 000 �,MID,No,No,No,False,False
 Santos Danilo,320 000 �,MID,No,No,No,False,False
 Silva �derson,320 000 �,MID,No,No,No,False,False
@@ -675,9 +675,9 @@ Olmo Dani,375 000 �,MID,No,No,No,False,False
 Pedri,355 000 �,MID,No,No,Free kicks,False,False
 Pino Yeremy,335 000 �,MID,No,No,No,False,False
 Rodri,340 000 �,MID,No,No,No,False,False
-Ruiz Fabi�n,350 000 �,MID,No,No,No,True,False
+Ruiz Fabi�n,350 000 �,MID,No,No,No,False,False
 Williams Nico,385 000 �,MID,No,No,Corners,False,False
-Yamal Lamine,425 000 �,MID,No,No,Both,True,False
+Yamal Lamine,425 000 �,MID,No,No,Both,False,False
 Zubimendi Mart�n,330 000 �,MID,No,No,No,False,False
 Adams Jayden,240 000 �,MID,No,No,No,False,False
 Appollis Oswin,265 000 �,MID,Yes,Primary,Both,False,False
@@ -841,7 +841,7 @@ Vla�i? Nikola,310 000 �,MID,No,No,No,False,False
 Amaimouni Ayoube,295 000 �,MID,No,No,No,False,False
 Amrabat Sofyan,290 000 �,MID,No,No,No,False,False
 Bouaddi Ayyoub,280 000 �,MID,No,No,No,False,False
-D�az Brahim,330 000 �,MID,No,No,No,True,False
+D�az Brahim,330 000 �,MID,No,No,No,False,False
 El Aynaoui Neil,285 000 �,MID,No,No,No,False,False
 El Khannouss Bilal,290 000 �,MID,No,No,Free kicks,False,False
 El Mourabet Samir,280 000 �,MID,No,No,No,False,False
@@ -915,7 +915,7 @@ Neves Jo�o,345 000 �,MID,No,No,No,False,False
 Neves R�ben,325 000 �,MID,No,No,No,False,False
 Silva Bernardo,370 000 �,MID,No,No,No,False,False
 Trinc�o Francisco,335 000 �,MID,No,No,No,False,False
-Vitinha,345 000 �,MID,No,No,No,True,False
+Vitinha,345 000 �,MID,No,No,No,False,False
 Abdurisag Yusuf,245 000 �,MID,No,No,No,False,False
 Afif Akram,280 000 �,MID,Yes,Primary,Both,False,False
 Al-Ganehi Ahmed,245 000 �,MID,No,No,No,False,False
@@ -959,7 +959,7 @@ Ou�draogo Assan,320 000 �,MID,No,No,No,False,False
 Pavlovi? Aleksandar,330 000 �,MID,No,No,No,False,False
 San� Leroy,380 000 �,MID,No,No,No,False,False
 Stiller Angelo,320 000 �,MID,No,No,No,False,False
-Wirtz Florian,385 000 �,MID,No,No,Both,False,False
+Wirtz Florian,385 000 �,MID,No,No,Both,True,False
 Al-Dawsari Nasser,235 000 �,MID,No,No,No,False,False
 Al-Dawsari Salem,265 000 �,MID,No,No,Corners,False,False
 Al-Hejji Alaa,230 000 �,MID,No,No,No,False,False
@@ -987,7 +987,7 @@ Fletcher Tyler,260 000 �,MID,No,No,No,False,False
 Gannon-Doak Ben,275 000 �,MID,No,No,No,False,False
 McGinn John,315 000 �,MID,Yes,Secondary,Both,False,False
 McLean Kenny,280 000 �,MID,No,No,No,False,False
-McTominay Scott,330 000 �,MID,Yes,Primary,No,False,False
+McTominay Scott,330 000 �,MID,Yes,Primary,No,True,False
 Aebischer Michel,280 000 �,MID,No,No,No,False,False
 Fassnacht Christian,305 000 �,MID,No,No,No,False,False
 Freuler Remo,290 000 �,MID,No,No,No,False,False
@@ -1169,7 +1169,7 @@ Matanovi? Igor,300 000 �,FWD,No,No,No,False,False
 Musa Petar,285 000 �,FWD,No,No,No,False,False
 El Kaabi Ayoub,320 000 �,FWD,No,No,No,False,False
 Rahimi Soufiane,290 000 �,FWD,Yes,Secondary,No,False,False
-Gim�nez Santiago,325 000 �,FWD,No,No,No,True,False
+Gim�nez Santiago,325 000 �,FWD,No,No,No,False,False
 Gonz�lez Armando,295 000 �,FWD,No,No,No,False,False
 Jim�nez Ra�l,340 000 �,FWD,No,No,No,False,False
 Mart�nez Guillermo,290 000 �,FWD,No,No,No,False,False
@@ -1202,7 +1202,7 @@ Gy�keres Viktor,355 000 �,FWD,No,No,No,False,False
 Isak Alexander,330 000 �,FWD,Yes,Secondary,No,False,False
 Nilsson Gustaf,270 000 �,FWD,No,No,No,False,False
 Beier Maximilian,335 000 �,FWD,No,No,No,False,False
-Havertz Kai,375 000 �,FWD,Yes,Primary,No,True,True
+Havertz Kai,375 000 �,FWD,Yes,Primary,No,False,False
 Undav Deniz,340 000 �,FWD,No,No,No,False,False
 Woltemade Nick,365 000 �,FWD,No,No,No,False,False
 Al-Buraikan Firas,265 000 �,FWD,Yes,Primary,No,False,False
@@ -1243,3 +1243,4 @@ Wood Chris,280 000 �,FWD,Yes,Primary,No,False,False
 Amonov Azizbek,235 000 �,FWD,No,No,No,False,False
 Sergeev Igor,245 000 �,FWD,No,No,No,False,False
 Shomurodov Eldor,260 000 �,FWD,Yes,Primary,No,False,False
+Quiñones Julián,320 000 €,MID,No,No,No,True,False
