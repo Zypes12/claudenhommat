@@ -8,6 +8,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.data import load_csv
+from utils.team_form import load_team_form, get_form_stats
 from logic.recommendations import (
     recommend_best_squad, recommend_transfers, get_transfer_schedule,
     fixture_difficulty, difficulty_label, display_name, compute_actual_stats,
@@ -23,9 +24,11 @@ players  = load_csv("players.csv")
 fixtures = load_csv("fixtures.csv")
 groups   = load_csv("groups.csv")
 lineups  = load_csv("lineups.csv")
-form     = load_csv("form.csv")
-results  = load_csv("results.csv")
+form       = load_csv("form.csv")
+results    = load_csv("results.csv")
+team_form  = load_team_form()
 actual_stats = compute_actual_stats(results)
+form_stats   = get_form_stats(team_form)
 
 # Determine whether we are still in the free initial selection window
 # (before the very first game of the tournament — no transfer slot is used).
@@ -69,7 +72,7 @@ st.divider()
 
 # ── Generate squad ────────────────────────────────────────────────────────────
 with st.spinner("Calculating…"):
-    result = recommend_best_squad(players, fixtures, groups, lineups, form=form, actual_stats=actual_stats)
+    result = recommend_best_squad(players, fixtures, groups, lineups, form=form, actual_stats=actual_stats, form_stats=form_stats)
 
 if result is None:
     st.warning("Not enough data. Check the **Data** page.")
@@ -88,7 +91,7 @@ st.caption(
     "Mid-round transfers are also valid but cost the same 1 transfer each."
 )
 
-schedule = get_transfer_schedule(squad, enriched, fixtures, groups, used, today, form=form, actual_stats=actual_stats)
+schedule = get_transfer_schedule(squad, enriched, fixtures, groups, used, today, form=form, actual_stats=actual_stats, form_stats=form_stats)
 
 if not schedule:
     st.info("No upcoming rounds found.")
@@ -249,7 +252,7 @@ pos_filter = ca.radio("Position", ["All", "GK", "DEF", "MID", "FWD"], horizontal
 n = cb.slider("Suggestions per side", 3, 10, 5)
 
 pf = None if pos_filter == "All" else pos_filter
-transfers = recommend_transfers(squad, enriched, fixtures, groups, n_suggestions=n, position_filter=pf, form=form, actual_stats=actual_stats)
+transfers = recommend_transfers(squad, enriched, fixtures, groups, n_suggestions=n, position_filter=pf, form=form, actual_stats=actual_stats, form_stats=form_stats)
 
 col_out, col_in = st.columns(2)
 

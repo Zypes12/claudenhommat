@@ -16,16 +16,23 @@ from utils.football_api import (
     APIError,
 )
 from utils.flashscore import sync_flashscore, ScrapeError
+from utils.team_form import (
+    fetch_all_teams_form, load_team_form, save_team_form,
+    get_form_stats, FORM_COLUMNS,
+)
 
 st.set_page_config(page_title="Live Sync", page_icon="🔗", layout="wide")
 st.title("🔗 Live Data Sync")
 st.caption(
-    "Two sync sources — use either or both. "
-    "**Flashscore** (no key needed) gives results, goalscorers, and confirmed lineups. "
-    "**football-data.org** gives clean results via their official API."
+    "Three data sources — Flashscore for live results + lineups, "
+    "football-data.org for results via API, and pre-tournament team form scraper."
 )
 
-tab_fs, tab_fdorg = st.tabs(["⚡ Flashscore  (results + lineups, no key)", "📡 football-data.org  (results only)"])
+tab_fs, tab_form, tab_fdorg = st.tabs([
+    "⚡ Flashscore  (results + lineups, no key)",
+    "📊 Pre-tournament Form  (last 5 matches per team)",
+    "📡 football-data.org  (results only)",
+])
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -174,7 +181,126 @@ with tab_fs:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB 2 — football-data.org
+# TAB 2 — Pre-tournament team form
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab_form:
+    st.markdown("### Pre-tournament Form Scraper")
+    st.caption(
+        "Fetches the last 5 completed matches for every WC 2026 team from Flashscore "
+        "team result pages. This data is used to improve the model's initial attack/defence "
+        "priors before any tournament results are available. "
+        "**Run once before the tournament starts, then rely on Live Sync for updates.**"
+    )
+
+    existing_form = load_team_form()
+    if not existing_form.empty:
+        n_teams = existing_form["team"].nunique()
+        n_matches = len(existing_form)
+        st.success(f"**Form data loaded:** {n_teams} teams · {n_matches} match records")
+        stats = get_form_stats(existing_form)
+        gpg_map = stats.get("team_gpg", {})
+        cg_map  = stats.get("team_concede_gpg", {})
+        g_map   = stats.get("team_games", {})
+        if gpg_map:
+            with st.expander("Current form data by team"):
+                rows = []
+                for t in sorted(gpg_map.keys()):
+                    rows.append({
+                        "Team":            t,
+                        "Matches":         g_map.get(t, 0),
+                        "Goals/game":      round(gpg_map.get(t, 0), 2),
+                        "Conceded/game":   round(cg_map.get(t, 0), 2),
+                    })
+                st.dataframe(rows, use_container_width=True, hide_index=True)
+    else:
+        st.info("No form data yet — click **Fetch** to scrape it.")
+
+    st.divider()
+
+    n_matches_slider = st.slider(
+        "Matches per team to fetch",
+        min_value=3, max_value=8, value=5,
+        help="Last N completed matches before the World Cup for each team.",
+    )
+
+    if st.button("📊 Fetch pre-tournament form (all 48 teams)", type="primary"):
+        progress_bar = st.progress(0.0, text="Starting…")
+        status_text  = st.empty()
+
+        def _progress(done, total, team_name):
+            pct = done / max(total, 1)
+            progress_bar.progress(pct, text=f"Fetching {team_name}… ({done}/{total})")
+            status_text.caption(f"Last fetched: **{team_name}**")
+
+        try:
+            df, errors = fetch_all_teams_form(
+                n_matches=n_matches_slider,
+                delay=1.5,
+                progress_callback=_progress,
+            )
+        except ScrapeError as e:
+            st.error(f"**Scrape failed:** {e}")
+            st.stop()
+
+        progress_bar.progress(1.0, text="Done!")
+        status_text.empty()
+
+        if errors:
+            with st.expander(f"⚠️ {len(errors)} teams failed"):
+                for e in errors:
+                    st.warning(e)
+
+        if df.empty:
+            st.warning("No data returned. Check internet connection.")
+        else:
+            save_team_form(df)
+            n_teams = df["team"].nunique()
+            n_rows  = len(df)
+            st.success(
+                f"**Saved!** {n_teams} teams · {n_rows} match records → `Data/team_form.csv`"
+            )
+            stats = get_form_stats(df)
+            gpg_map = stats.get("team_gpg", {})
+            cg_map  = stats.get("team_concede_gpg", {})
+            g_map   = stats.get("team_games", {})
+            preview_rows = [
+                {
+                    "Team":          t,
+                    "Matches":       g_map.get(t, 0),
+                    "Goals/game":    round(gpg_map.get(t, 0), 2),
+                    "Conceded/game": round(cg_map.get(t, 0), 2),
+                }
+                for t in sorted(gpg_map.keys())
+            ]
+            st.dataframe(preview_rows, use_container_width=True, hide_index=True)
+            st.caption(
+                "Reload the **Dashboard** or **Transfers** page to apply this data "
+                "to the expected-points model."
+            )
+
+    st.divider()
+    with st.expander("ℹ️ About this data"):
+        st.markdown("""
+**What gets scraped:** Flashscore team result pages — the last 5 completed matches
+before June 11, 2026 for every team that appears in the WC 2026 group stage.
+
+**Competition filter:** Flashscore does not label competition type in its data feed.
+The results will be mostly WC qualification matches and continental competitions;
+a small number of international friendlies may be included.
+
+**How it affects the model:** The model starts with priors based on long-run
+qualification stats (`form.csv`). Recent 5-match form blends in at 2× weight,
+giving a better initial attack/defence estimate. Tournament results then take over
+as games are played.
+
+**xG:** Not available from Flashscore. If xG data is added later (e.g. from
+FBref), it can be merged into `team_form.csv` using the `competition_id` column
+as a match key.
+        """)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB 3 — football-data.org
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab_fdorg:
     st.markdown("### football-data.org Sync")

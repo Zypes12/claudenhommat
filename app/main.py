@@ -6,6 +6,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).parent))
 
 from utils.data import load_csv
+from utils.team_form import load_team_form, get_form_stats
 from logic.recommendations import (
     recommend_best_squad, fixture_difficulty, difficulty_label,
     squad_fixture_table, display_name, compute_actual_stats,
@@ -48,9 +49,11 @@ players  = load_csv("players.csv")
 fixtures = load_csv("fixtures.csv")
 groups   = load_csv("groups.csv")
 lineups  = load_csv("lineups.csv")
-form     = load_csv("form.csv")
-results  = load_csv("results.csv")
+form       = load_csv("form.csv")
+results    = load_csv("results.csv")
+team_form  = load_team_form()
 actual_stats = compute_actual_stats(results)
+form_stats   = get_form_stats(team_form)
 
 # ── Header ─────────────────────────────────────────────────────────────────────
 st.title("⚽ Futispörssi  ·  World Cup 2026")
@@ -74,7 +77,7 @@ st.divider()
 
 # ── Generate recommendation ────────────────────────────────────────────────────
 with st.spinner("Calculating best squad…"):
-    result = recommend_best_squad(players, fixtures, groups, lineups, form=form, actual_stats=actual_stats)
+    result = recommend_best_squad(players, fixtures, groups, lineups, form=form, actual_stats=actual_stats, form_stats=form_stats)
 
 if result is None:
     st.warning(

@@ -293,6 +293,7 @@ def _score_for_date(
     groups: pd.DataFrame,
     form: "pd.DataFrame | None" = None,
     actual_stats: "dict | None" = None,
+    form_stats: "dict | None" = None,
 ) -> float:
     """
     Expected points for a player on one specific calendar day.
@@ -307,7 +308,7 @@ def _score_for_date(
     ]
     if team_fx.empty:
         return 0.0
-    return expected_matchday_points(player, team_fx, groups, next_n=1, form=form, actual_stats=actual_stats)
+    return expected_matchday_points(player, team_fx, groups, next_n=1, form=form, actual_stats=actual_stats, form_stats=form_stats)
 
 
 # ── Expected points estimation ─────────────────────────────────────────────────
@@ -319,6 +320,7 @@ def expected_matchday_points(
     next_n: int = 3,
     form: "pd.DataFrame | None" = None,
     actual_stats: "dict | None" = None,
+    form_stats: "dict | None" = None,
 ) -> float:
     """
     Estimate expected Futispörssi points per game over the next N fixtures.
@@ -377,6 +379,16 @@ def expected_matchday_points(
     # Team attack strength from qualifying form (neutral = 1.0)
     attack_factor = get_team_attack_rate(team, form)
 
+    # Blend with pre-tournament recent form (last 5 matches) — gives better
+    # initial priors before tournament results exist.  Recent 5-match GPG is
+    # weighted 2× vs the qualification-history prior.
+    if form_stats:
+        recent_gpg = form_stats.get("team_gpg", {}).get(team)
+        if recent_gpg is not None:
+            prior_gpg = attack_factor * 1.8
+            blended_gpg = (prior_gpg + recent_gpg * 2) / 3
+            attack_factor = min(1.8, max(0.5, blended_gpg / 1.8))
+
     # ── Blend priors with actual tournament data ──────────────────────────────
     # Prior weight = 5 equivalent games.  Blending shifts toward actual data
     # as the tournament progresses; with 0 games played nothing changes.
@@ -427,6 +439,13 @@ def expected_matchday_points(
         cs_prob = win_p * 0.60 + draw_p * 0.20
         if is_knockout:
             cs_prob = min(0.75, cs_prob * 1.25)  # knockout games are tighter
+
+        # Blend CS with pre-tournament recent form (weighted 2× vs rank-based prior)
+        if form_stats:
+            recent_concede_gpg = form_stats.get("team_concede_gpg", {}).get(team)
+            if recent_concede_gpg is not None:
+                recent_cs = math.exp(-max(0.1, float(recent_concede_gpg)))
+                cs_prob = (cs_prob + recent_cs * 2) / 3
 
         # Blend CS probability with actual concede rate (Poisson P(0 conceded))
         if _actual_games > 0:
@@ -524,6 +543,7 @@ def recommend_best_squad(
     lineups: pd.DataFrame,
     form: "pd.DataFrame | None" = None,
     actual_stats: "dict | None" = None,
+    form_stats: "dict | None" = None,
 ) -> dict | None:
     """
     Returns the optimal 11-player squad within budget.
@@ -544,7 +564,7 @@ def recommend_best_squad(
     # Keep only players matched to a lineup entry — non-starters are irrelevant
     enriched = enriched[enriched["team"].astype(str).str.strip() != ""].copy()
     enriched["exp_pts"] = enriched.apply(
-        lambda r: expected_matchday_points(r, fixtures, groups, form=form, actual_stats=actual_stats), axis=1
+        lambda r: expected_matchday_points(r, fixtures, groups, form=form, actual_stats=actual_stats, form_stats=form_stats), axis=1
     )
 
     best: dict | None = None
@@ -584,6 +604,7 @@ def recommend_transfers(
     position_filter: str | None = None,
     form: "pd.DataFrame | None" = None,
     actual_stats: "dict | None" = None,
+    form_stats: "dict | None" = None,
 ) -> dict:
     """
     Given current squad, suggest transfers in and out.
@@ -603,11 +624,11 @@ def recommend_transfers(
 
     if "exp_pts" not in available.columns:
         available["exp_pts"] = available.apply(
-            lambda r: expected_matchday_points(r, fixtures, groups, form=form, actual_stats=actual_stats), axis=1
+            lambda r: expected_matchday_points(r, fixtures, groups, form=form, actual_stats=actual_stats, form_stats=form_stats), axis=1
         )
     if "exp_pts" not in squad_pos.columns:
         squad_pos["exp_pts"] = squad_pos.apply(
-            lambda r: expected_matchday_points(r, fixtures, groups, form=form, actual_stats=actual_stats), axis=1
+            lambda r: expected_matchday_points(r, fixtures, groups, form=form, actual_stats=actual_stats, form_stats=form_stats), axis=1
         )
 
     top_in  = available.nlargest(n_suggestions, "exp_pts")
@@ -705,6 +726,7 @@ def get_transfer_schedule(
     today_str: str = "",
     form: "pd.DataFrame | None" = None,
     actual_stats: "dict | None" = None,
+    form_stats: "dict | None" = None,
 ) -> list[dict]:  # noqa: C901
     """
     Returns one entry per matchday ROUND (not per day).
@@ -798,7 +820,7 @@ def get_transfer_schedule(
     if "exp_pts" not in all_players.columns:
         all_players = all_players.copy()
         all_players["exp_pts"] = all_players.apply(
-            lambda r: expected_matchday_points(r, fixtures, groups, next_n=3, form=form, actual_stats=actual_stats), axis=1
+            lambda r: expected_matchday_points(r, fixtures, groups, next_n=3, form=form, actual_stats=actual_stats, form_stats=form_stats), axis=1
         )
     sq_names = set(squad_df["name"].astype(str).str.strip())
 
@@ -897,7 +919,7 @@ def get_transfer_schedule(
 
             # Score them for this specific day
             avail_today["day_pts"] = avail_today.apply(
-                lambda r: _score_for_date(r, day_fx, groups, form, actual_stats=actual_stats), axis=1
+                lambda r: _score_for_date(r, day_fx, groups, form, actual_stats=actual_stats, form_stats=form_stats), axis=1
             )
             avail_today = avail_today[avail_today["day_pts"] > 1.5]
             if avail_today.empty:
@@ -920,7 +942,7 @@ def get_transfer_schedule(
                 if "exp_pts" not in out_cands.columns:
                     out_cands = out_cands.copy()
                     out_cands["exp_pts"] = out_cands.apply(
-                        lambda r: expected_matchday_points(r, fixtures, groups, form=form, actual_stats=actual_stats), axis=1
+                        lambda r: expected_matchday_points(r, fixtures, groups, form=form, actual_stats=actual_stats, form_stats=form_stats), axis=1
                     )
                 worst_out = out_cands.nsmallest(1, "exp_pts").iloc[0]
 
