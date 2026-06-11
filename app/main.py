@@ -8,8 +8,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 from utils.data import load_csv
 from logic.recommendations import (
     recommend_best_squad, fixture_difficulty, difficulty_label,
-    squad_fixture_table, BUDGET, CAPTAIN_MULTIPLIER, MAX_TRANSFERS,
-    POS_COLORS,
+    squad_fixture_table, display_name,
+    BUDGET, CAPTAIN_MULTIPLIER, MAX_TRANSFERS, POS_COLORS,
 )
 
 st.set_page_config(
@@ -102,7 +102,7 @@ st.markdown("### Starting XI")
 def _card_html(p: dict, is_cap: bool) -> str:
     pos   = str(p.get("position", "")).upper()
     color = POS_COLORS.get(pos, "#7c3aed")
-    name  = p.get("name", "—")
+    name  = display_name(str(p.get("name", "—")))
     team  = p.get("team", "") or "—"
     pts   = float(p.get("exp_pts", 0))
     bg    = "rgba(60,50,0,0.85)" if is_cap else "rgba(15,15,30,0.75)"
@@ -162,7 +162,7 @@ if not cap_row.empty:
     st.markdown("### ⭐ Captain Pick")
 
     cc1, cc2, cc3, cc4 = st.columns(4)
-    cc1.metric("Player", captain)
+    cc1.metric("Player", display_name(captain))
     cc2.metric("Position", str(cap.get("position", "")).upper())
     cc3.metric("Exp pts / game", f"{float(cap.get('exp_pts', 0)):.1f}")
     cc4.metric(f"As captain (×{CAPTAIN_MULTIPLIER})", f"{cap_pts:.1f}")

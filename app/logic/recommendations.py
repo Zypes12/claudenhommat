@@ -45,6 +45,19 @@ def parse_value(val) -> float:
     return float(digits) if digits else 0.0
 
 
+def display_name(stored_name: str) -> str:
+    """
+    players.csv stores names as 'LastName FirstName'.
+    Returns 'FirstName LastName' for display.
+    Single-word names are returned unchanged.
+    """
+    parts = str(stored_name).strip().split()
+    if len(parts) <= 1:
+        return stored_name
+    # Last token = first name; everything before = surname
+    return parts[-1] + " " + " ".join(parts[:-1])
+
+
 # ── Difficulty labels ──────────────────────────────────────────────────────────
 
 def difficulty_label(avg_opp_rank: float) -> tuple[str, str]:
@@ -450,114 +463,185 @@ def get_transfer_schedule(
     groups: pd.DataFrame,
     transfers_used: int = 0,
     today_str: str = "",
-) -> list[dict]:
+) -> list[dict]:  # noqa: C901
     """
-    Returns a list of transfer windows — one per upcoming matchday — with:
-      matchday, deadline_date, days_away, urgency, recommended_swaps[]
-    Each swap: {out, in, position, pts_gain, reason}
+    Returns one entry per matchday ROUND (not per day).
+
+    A matchday round spans ~7 calendar days (e.g. Matchday 1 = June 11–17).
+    Within that round, every calendar day with games is a transfer opportunity.
+
+    Each entry:
+      round_label   – "Matchday 1", "Round of 32", etc.
+      round_start   – first game date in the round (YYYY-MM-DD)
+      round_end     – last game date in the round
+      days_to_start – calendar days until first game
+      urgency       – colour emoji
+      suggested_transfers – int (budget recommendation for this round)
+      pre_round_swaps – list of {out, in, position, pts_gain, reason}
+      daily_games   – list of {date, days_away, games: [{home, away, squad_home, squad_away}]}
     """
     if fixtures.empty or squad_df.empty:
         return []
 
     import datetime
+
     try:
         today = datetime.date.fromisoformat(today_str) if today_str else datetime.date.today()
     except ValueError:
         today = datetime.date.today()
 
-    # Build matchday → first fixture date
+    squad_teams = set(squad_df["team"].astype(str).str.strip().tolist())
+
     unplayed = fixtures.copy()
     if "home_score" in fixtures.columns:
         unplayed = fixtures[
             fixtures["home_score"].isna() | (fixtures["home_score"].astype(str).str.strip() == "")
-        ]
+        ].copy()
 
-    md_dates: dict[str, str] = {}
-    seen_dates: set[str] = set()
-    for _, row in unplayed.iterrows():
+    # ── Build round → {date → [row]} map ──────────────────────────────────────
+    def _round_key(row) -> str:
         md    = str(row.get("matchday", "")).strip()
         stage = str(row.get("stage", "")).strip()
-        d     = str(row.get("date", "")).strip()
+        if md and md not in ("nan", ""):
+            try:
+                return f"Matchday {int(float(md))}"
+            except ValueError:
+                pass
+        if stage and stage not in ("Group Stage",):
+            return stage
+        return ""
+
+    rounds: dict[str, dict] = {}
+    for _, row in unplayed.iterrows():
+        d = str(row.get("date", "")).strip()
         if not d:
             continue
-        # Group stage rows use numeric matchday; knockout rows have no matchday
-        if md and md not in ("nan", ""):
-            key = f"Matchday {int(float(md))}"
-        elif stage and stage not in ("Group Stage",):
-            key = stage
-        else:
-            continue
-        # Only take the earliest date per window; skip duplicate dates
-        if key not in md_dates:
-            md_dates[key] = d
-            seen_dates.add(d)
-
-    transfers_remaining = MAX_TRANSFERS - transfers_used
-    budget_per_md = max(1, round(transfers_remaining / max(len(md_dates), 1)))
-
-    schedule = []
-    for md_key in sorted(md_dates.keys(), key=lambda x: md_dates[x]):
-        deadline_str = md_dates[md_key]
         try:
-            deadline = datetime.date.fromisoformat(deadline_str)
+            game_date = datetime.date.fromisoformat(d)
         except ValueError:
             continue
-        days_away = (deadline - today).days
-        if days_away < 0:
+        key = _round_key(row)
+        if not key:
+            continue
+        if key not in rounds:
+            rounds[key] = {"dates_games": {}}
+        rounds[key]["dates_games"].setdefault(d, []).append(row)
+
+    if not rounds:
+        return []
+
+    transfers_remaining = MAX_TRANSFERS - transfers_used
+    n_rounds = len(rounds)
+    # Front-load transfers: more for early rounds (fixture data is better)
+    # Simple even split; caller can adjust
+    per_round = max(1, round(transfers_remaining / max(n_rounds, 1)))
+
+    # ── Pre-score all available players once ──────────────────────────────────
+    if "exp_pts" not in all_players.columns:
+        all_players = all_players.copy()
+        all_players["exp_pts"] = all_players.apply(
+            lambda r: expected_matchday_points(r, fixtures, groups, next_n=3), axis=1
+        )
+    sq_names = set(squad_df["name"].astype(str).str.strip())
+
+    schedule = []
+    for round_key in sorted(rounds.keys(), key=lambda k: min(rounds[k]["dates_games"].keys())):
+        dates_games = rounds[round_key]["dates_games"]
+        sorted_dates = sorted(dates_games.keys())
+        round_start_str = sorted_dates[0]
+        round_end_str   = sorted_dates[-1]
+
+        try:
+            round_start = datetime.date.fromisoformat(round_start_str)
+            round_end   = datetime.date.fromisoformat(round_end_str)
+        except ValueError:
             continue
 
-        if days_away == 0:
-            urgency = "🔴 Today"
-        elif days_away <= 2:
-            urgency = "🟠 Soon"
-        elif days_away <= 5:
-            urgency = "🟡 Upcoming"
+        days_to_start = (round_start - today).days
+        round_span    = (round_end - round_start).days + 1
+
+        # Skip fully past rounds
+        if (round_end - today).days < 0:
+            continue
+
+        if days_to_start <= 0:
+            urgency = "🔴 In progress"
+        elif days_to_start <= 2:
+            urgency = "🟠 Starts soon"
+        elif days_to_start <= 6:
+            urgency = "🟡 This week"
         else:
-            urgency = "🟢 Ahead"
+            urgency = "🟢 Upcoming"
 
-        # Score squad players for THIS matchday window
+        # ── Pre-round swap recommendations ────────────────────────────────────
+        # Restrict fixtures to just this round for scoring
+        round_fixture_dates = set(sorted_dates)
+        round_fx = unplayed[unplayed["date"].astype(str).str.strip().isin(round_fixture_dates)]
+
         sq = squad_df.copy()
-        sq["md_pts"] = sq.apply(
-            lambda r: expected_matchday_points(r, fixtures, groups, next_n=1), axis=1
+        sq["round_pts"] = sq.apply(
+            lambda r: expected_matchday_points(r, round_fx if not round_fx.empty else fixtures, groups, next_n=len(sorted_dates)),
+            axis=1,
         )
-        worst = sq.nsmallest(min(3, budget_per_md), "md_pts")
+        worst = sq.nsmallest(min(3, per_round), "round_pts")
 
-        # Find best replacements for weakest positions
-        sq_names = set(sq["name"].astype(str))
         swaps = []
         for _, out_row in worst.iterrows():
             pos = str(out_row.get("position", "")).upper()
-            replacements = all_players[
-                (~all_players["name"].astype(str).isin(sq_names)) &
+            candidates = all_players[
+                (~all_players["name"].astype(str).str.strip().isin(sq_names)) &
                 (all_players["position"].str.upper() == pos)
-            ].copy()
-            if replacements.empty:
+            ]
+            if candidates.empty:
                 continue
-            if "exp_pts" not in replacements.columns:
-                replacements["exp_pts"] = replacements.apply(
-                    lambda r: expected_matchday_points(r, fixtures, groups, next_n=1), axis=1
-                )
-            best_in = replacements.nlargest(1, "exp_pts").iloc[0]
-            gain = round(float(best_in["exp_pts"]) - float(out_row["md_pts"]), 1)
-            if gain > 0.3:
+            best_in = candidates.nlargest(1, "exp_pts").iloc[0]
+            gain = round(float(best_in["exp_pts"]) - float(out_row.get("round_pts", 0)), 1)
+            if gain > 0.2:
                 team_in = str(best_in.get("team", ""))
-                diff = fixture_difficulty(team_in, fixtures, groups, next_n=1)
+                diff = fixture_difficulty(team_in, fixtures, groups, next_n=3)
                 lbl, _ = difficulty_label(diff)
                 swaps.append({
-                    "out":      out_row["name"],
-                    "in":       best_in["name"],
+                    "out":      display_name(str(out_row["name"])),
+                    "in":       display_name(str(best_in["name"])),
                     "position": pos,
                     "pts_gain": gain,
-                    "reason":   f"{lbl} next fixture (avg opp rank {diff:.0f}) · +{gain:.1f} pts/g gain",
+                    "reason":   f"{lbl} fixtures · +{gain:.1f} pts/g vs. current pick",
                 })
 
+        # ── Daily game breakdown ───────────────────────────────────────────────
+        daily_games = []
+        for d_str in sorted_dates:
+            try:
+                d_date = datetime.date.fromisoformat(d_str)
+            except ValueError:
+                continue
+            days_away_d = (d_date - today).days
+            games = []
+            for _, fx in pd.DataFrame(dates_games[d_str]).iterrows():
+                home = str(fx.get("home_team", ""))
+                away = str(fx.get("away_team", ""))
+                games.append({
+                    "home":        home,
+                    "away":        away,
+                    "squad_home":  home in squad_teams,
+                    "squad_away":  away in squad_teams,
+                })
+            daily_games.append({
+                "date":      d_str,
+                "days_away": days_away_d,
+                "games":     games,
+            })
+
         schedule.append({
-            "matchday":      md_key,
-            "deadline_date": deadline_str,
-            "days_away":     days_away,
-            "urgency":       urgency,
-            "budget":        budget_per_md,
-            "swaps":         swaps,
+            "round_label":          round_key,
+            "round_start":          round_start_str,
+            "round_end":            round_end_str,
+            "round_span_days":      round_span,
+            "days_to_start":        days_to_start,
+            "urgency":              urgency,
+            "suggested_transfers":  per_round,
+            "pre_round_swaps":      swaps,
+            "daily_games":          daily_games,
         })
 
     return schedule
