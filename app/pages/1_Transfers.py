@@ -87,46 +87,53 @@ WC 2026 is in North America — a 9 pm EDT kickoff on June 14 means your deadlin
 
 # ── Coverage Calendar ─────────────────────────────────────────────────────────
 st.markdown("## Coverage Calendar")
-st.caption("Green = at least one squad player has a game · Red = gap day (priority to fix)")
 
 gaps, covered = squad_coverage_gaps(squad, fixtures)
-if gaps:
-    st.error(f"**{len(gaps)} gap day(s) — no squad player plays:** " + "  ·  ".join(gaps))
+covered_map = {date: teams for date, teams in covered}
 
 _all_fix_dates = sorted(
     d for d in fixtures["date"].astype(str).str.strip().unique()
     if d and d not in ("nan", "") and d >= today
 )
+
 if _all_fix_dates:
-    covered_map = {date: teams for date, teams in covered}
-    # Group into rows of 10 for readability
-    _chunk = 10
-    for _start in range(0, len(_all_fix_dates), _chunk):
-        _chunk_dates = _all_fix_dates[_start:_start + _chunk]
-        _cal_cols = st.columns(len(_chunk_dates))
-        for _col, _date in zip(_cal_cols, _chunk_dates):
-            try:
-                _d_obj = datetime.date.fromisoformat(_date)
-                _day_lbl = _d_obj.strftime("%-d %b")
-            except Exception:
-                _day_lbl = _date[5:]
-            if _date in covered_map:
-                _teams_str = "<br>".join(covered_map[_date])
-                _col.markdown(
-                    f"<div style='text-align:center;background:rgba(20,83,45,0.7);"
-                    f"border:1px solid #22c55e;border-radius:5px;padding:4px 2px;font-size:9px'>"
-                    f"<b style='color:#4ade80'>{_day_lbl}</b><br>"
-                    f"<span style='color:#86efac'>{_teams_str}</span></div>",
-                    unsafe_allow_html=True,
-                )
-            else:
-                _col.markdown(
-                    f"<div style='text-align:center;background:rgba(127,29,29,0.7);"
-                    f"border:1px solid #ef4444;border-radius:5px;padding:4px 2px;font-size:9px'>"
-                    f"<b style='color:#f87171'>{_day_lbl}</b><br>"
-                    f"<span style='color:#fca5a5'>GAP</span></div>",
-                    unsafe_allow_html=True,
-                )
+    _cells = []
+    for _date in _all_fix_dates:
+        try:
+            _d_obj = datetime.date.fromisoformat(_date)
+            _day_lbl = _d_obj.strftime("%-d %b")
+        except Exception:
+            _day_lbl = _date[5:]
+
+        if _date in covered_map:
+            _teams = " · ".join(covered_map[_date])
+            _cells.append(
+                f"<div style='flex:0 0 auto;text-align:center;background:rgba(20,83,45,0.75);"
+                f"border:1px solid #22c55e;border-radius:6px;padding:6px 8px;min-width:70px;max-width:110px;'>"
+                f"<div style='font-size:11px;font-weight:700;color:#4ade80'>{_day_lbl}</div>"
+                f"<div style='font-size:9px;color:#86efac;margin-top:2px;line-height:1.3'>{_teams}</div>"
+                f"</div>"
+            )
+        else:
+            _cells.append(
+                f"<div style='flex:0 0 auto;text-align:center;background:rgba(127,29,29,0.75);"
+                f"border:1px solid #ef4444;border-radius:6px;padding:6px 8px;min-width:70px;max-width:110px;'>"
+                f"<div style='font-size:11px;font-weight:700;color:#f87171'>{_day_lbl}</div>"
+                f"<div style='font-size:9px;color:#fca5a5;margin-top:2px'>GAP</div>"
+                f"</div>"
+            )
+
+    st.markdown(
+        "<div style='display:flex;flex-wrap:wrap;gap:6px;padding:4px 0'>"
+        + "".join(_cells)
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+    if gaps:
+        st.caption(f"Red = gap day — no squad player plays · {len(gaps)} gap(s) found")
+    else:
+        st.caption("All days covered — no gaps in squad coverage")
 
 st.divider()
 
@@ -156,6 +163,7 @@ for window in schedule:
         is_free_swap = bool(tournament_start and s["transfer_date"] <= tournament_start)
         in_adv = s.get("in_advance_prob", 1.0)
         adv_str = f"{in_adv:.0%}" if in_adv < 0.80 else ""
+        is_ko = s.get("is_ko_round", False)
         all_swaps.append({
             "Date":      s["transfer_date"],
             "When":      when_str,
@@ -170,7 +178,9 @@ for window in schedule:
             "Net":       f"{s['pts_gain']:+.1f}",
             "Gap":       "GAP" if s.get("is_gap_day") else "",
             "Rebuy?":    "rebuy" if s.get("can_buy_back") else "",
-            "Adv%":      adv_str,
+            "Surv%":     adv_str,
+            "KO?":       "KO" if is_ko else "",
+            "ST?":       "SHORT-TERM" if s.get("is_short_term") else "",
         })
 
 if all_swaps:

@@ -22,6 +22,7 @@ Strategy rules baked into scoring (Finnish Futispörssi community guidelines):
   6. Transfer up in value: small preference for expensive in-players (budget maximisation).
 """
 from __future__ import annotations
+import datetime
 import math
 import re
 import unicodedata
@@ -606,6 +607,81 @@ def compute_advance_probability(
         return 0.05
 
     return 0.0  # 4th place — eliminated
+
+
+def _group_stage_date_range(
+    fixtures: pd.DataFrame,
+) -> "tuple":
+    """Return (first_date, last_date) of group stage fixtures as datetime.date objects."""
+    gs_mask = (
+        fixtures["matchday"].astype(str).str.strip().str.match(r"^[123]\.?0?$") |
+        fixtures["stage"].astype(str).str.strip().str.lower().isin(["group stage", "group"])
+    )
+    gs_fx = fixtures[gs_mask]
+    dates = []
+    for d in gs_fx["date"].astype(str).str.strip():
+        try:
+            dates.append(datetime.date.fromisoformat(d))
+        except ValueError:
+            pass
+    if not dates:
+        return None, None
+    return min(dates), max(dates)
+
+
+def compute_ko_win_prob(
+    team: str,
+    fixtures: pd.DataFrame,
+    groups: pd.DataFrame,
+    advance_probs: "dict | None" = None,
+) -> float:
+    """
+    Probability that a team survives their next knockout match.
+
+    Draws lead to extra time / penalties — modelled as 50% each team advances.
+    Falls back to advance_probs (group-stage estimate) if no knockout fixture found.
+    """
+    team = team.strip()
+    unplayed = fixtures
+    if "home_score" in fixtures.columns:
+        unplayed = fixtures[
+            fixtures["home_score"].isna() | (fixtures["home_score"].astype(str).str.strip() == "")
+        ]
+
+    team_fx = unplayed[
+        (unplayed["home_team"].astype(str).str.strip() == team) |
+        (unplayed["away_team"].astype(str).str.strip() == team)
+    ].copy()
+
+    if team_fx.empty:
+        return float((advance_probs or {}).get(team, 0.5))
+
+    try:
+        team_fx["_d"] = pd.to_datetime(team_fx["date"], errors="coerce")
+        team_fx = team_fx.dropna(subset=["_d"]).sort_values("_d")
+    except Exception:
+        return float((advance_probs or {}).get(team, 0.5))
+
+    if team_fx.empty:
+        return float((advance_probs or {}).get(team, 0.5))
+
+    next_fx = team_fx.iloc[0]
+    stage = str(next_fx.get("stage", "")).strip().lower()
+    is_ko_fixture = bool(stage and "group" not in stage and "matchday" not in stage)
+
+    if not is_ko_fixture:
+        return float((advance_probs or {}).get(team, 0.5))
+
+    opp_col = "away_team" if str(next_fx.get("home_team", "")).strip() == team else "home_team"
+    opp = str(next_fx.get(opp_col, "")).strip()
+    if not opp:
+        return float((advance_probs or {}).get(team, 0.5))
+
+    team_rank = get_team_ranking(team, groups)
+    opp_rank  = get_team_ranking(opp, groups)
+    team_rank_eff = max(1.0, team_rank - HOME_RANK_BOOST) if team in HOST_NATIONS else team_rank
+    win_p, draw_p, _ = _result_probs(team_rank_eff, opp_rank)
+    return round(win_p + draw_p * 0.5, 3)
 
 
 # ── Single-day scoring helper ─────────────────────────────────────────────────
@@ -1412,6 +1488,9 @@ def get_transfer_schedule(
     if not rounds:
         return []
 
+    # Group stage date range — used to compute knockout_proximity_t per round
+    _gs_start, _gs_end = _group_stage_date_range(fixtures)
+
     transfers_remaining = MAX_TRANSFERS - transfers_used
     n_rounds = len(rounds)
     per_round = max(1, round(transfers_remaining / max(n_rounds, 1)))
@@ -1476,6 +1555,18 @@ def get_transfer_schedule(
             urgency = "This week"
         else:
             urgency = "Upcoming"
+
+        # Is this a knockout round?  (round_key contains "Matchday" for group stage)
+        _round_is_ko = "matchday" not in round_key.lower()
+
+        # Knockout proximity: 0.0 at tournament start → 1.0 at last group stage day.
+        # In knockout rounds the full advance weight always applies (t=1.0).
+        if _round_is_ko or _gs_start is None or _gs_end is None or _gs_start == _gs_end:
+            knockout_proximity_t = 1.0
+        else:
+            _t_range = (_gs_end - _gs_start).days
+            _t_elapsed = (today - _gs_start).days
+            knockout_proximity_t = min(1.0, max(0.0, _t_elapsed / _t_range))
 
         # ── Day-specific transfer opportunities ───────────────────────────────
         # For each future day in this round:
@@ -1557,6 +1648,18 @@ def get_transfer_schedule(
 
             is_gap = d_str in uncovered_days
 
+            # Team concentration in the current running squad.
+            # Hard limit per team:
+            #   Knockout rounds → 2  (one loss eliminates the whole cluster)
+            #   Late group stage (proximity ≥ 0.7) → 2 for shaky teams, else 3
+            #   Early/mid group stage → 3
+            _sq_now = squad_df[squad_df["name"].astype(str).str.strip().isin(running_sq_names)]
+            _team_counts: dict = (
+                _sq_now["team"].astype(str).str.strip()
+                .value_counts().to_dict()
+            )
+            _max_same_team = 2 if _round_is_ko else 3
+
             for pos in ["FWD", "MID", "DEF", "GK"]:
                 if len(swaps) >= max(3, per_round):
                     break
@@ -1570,19 +1673,38 @@ def get_transfer_schedule(
                 if in_cands.empty or out_cands.empty:
                     continue
 
-                # Sell-score: combines low exp_pts + hard upcoming fixtures +
-                # low advance probability (player from likely-eliminated team = sell first).
+                # Sell-score: low exp_pts + hard fixtures + low advance probability.
+                # Advance weight raised to 5.0 so likely-eliminated teams are aggressively
+                # flagged as sell candidates.
                 if "exp_pts" not in out_cands.columns:
                     out_cands = out_cands.copy()
                     out_cands["exp_pts"] = out_cands.apply(
                         lambda r: expected_matchday_points(r, fixtures, groups, form=form, actual_stats=actual_stats, form_stats=form_stats, recent_form=recent_form), axis=1
                     )
                 out_cands = out_cands.copy()
+                def _survival_prob(team_str: str) -> float:
+                    if _round_is_ko:
+                        return compute_ko_win_prob(team_str, fixtures, groups, advance_probs)
+                    return float((advance_probs or {}).get(team_str, 0.5))
+
+                # Concentration sell pressure: a nudge, not a veto.
+                # Individual performance (-exp_pts) stays the dominant term.
+                # Weight scales with phase and how many transfers remain:
+                #   group stage, few transfers  → 0.6 per excess player (barely a nudge)
+                #   group stage, many transfers → 0.9
+                #   KO stage, few transfers     → 1.2
+                #   KO stage, many transfers    → 2.0  (afford to rebalance now)
+                _conc_phase   = 1.5 if _round_is_ko else 0.7
+                _conc_tx_mult = min(1.35, max(0.85, transfer_rate / 1.5))
+                _conc_weight  = _conc_phase * _conc_tx_mult
+
                 out_cands["sell_score"] = out_cands.apply(
                     lambda r: (
                         -float(r.get("exp_pts", 0))
                         + max(0.0, (50.0 - fixture_difficulty(str(r.get("team", "")), fixtures, groups, next_n=2)) / 50.0) * 2.0
-                        + max(0.0, 1.0 - (advance_probs or {}).get(str(r.get("team", "")), 0.5)) * 3.0
+                        + max(0.0, 1.0 - _survival_prob(str(r.get("team", "")).strip())) * 5.0
+                        # Concentration nudge — only kicks in above the per-phase limit
+                        + max(0.0, _team_counts.get(str(r.get("team", "")).strip(), 0) - _max_same_team) * _conc_weight
                     ),
                     axis=1,
                 )
@@ -1590,11 +1712,98 @@ def get_transfer_schedule(
 
                 out_val_freed = parse_value(worst_out.get("value", 0))
                 budget_slack_r = BUDGET - running_budget + out_val_freed
-                in_cands_ok = in_cands[in_cands["value"].apply(parse_value) <= budget_slack_r]
+                in_cands_ok = in_cands[in_cands["value"].apply(parse_value) <= budget_slack_r].copy()
                 if in_cands_ok.empty:
                     continue
 
-                best_in = in_cands_ok.nlargest(1, "day_pts").iloc[0]
+                # Concentration hard filter for IN candidates.
+                # Hard limits (adding one more would exceed):
+                #   KO stage: 2 — one elimination wipes the cluster
+                #   Late group (proximity ≥ 0.7) + shaky team (<60% adv): 2
+                #   Group stage otherwise: 4 (truly extreme; 3 is soft, not hard)
+                def _hard_limit(team_str: str) -> int:
+                    if _round_is_ko:
+                        return 2
+                    if knockout_proximity_t >= 0.7:
+                        t_adv = float((advance_probs or {}).get(team_str, 0.5))
+                        if t_adv < 0.60:
+                            return 2
+                    return 4   # group stage soft ceiling — never a 5th from same team
+
+                in_cands_ok = in_cands_ok[
+                    in_cands_ok["team"].astype(str).str.strip().map(
+                        lambda t: _team_counts.get(t, 0) < _hard_limit(t)
+                    )
+                ]
+                if in_cands_ok.empty:
+                    continue
+
+                # Dead rubber filter: if a team is already eliminated (advance_prob == 0)
+                # their remaining group fixtures involve heavy rotation and are worthless.
+                # Only apply in group stage — knockout eliminates speak for themselves.
+                if not _round_is_ko:
+                    in_cands_ok = in_cands_ok[
+                        in_cands_ok["team"].astype(str).str.strip().map(
+                            lambda t: float((advance_probs or {}).get(t, 0.5)) > 0.0
+                        )
+                    ]
+                    if in_cands_ok.empty:
+                        continue
+
+                # Score IN candidates combining day_pts with tournament survival probability.
+                # Gap days: coverage is the priority — use raw pts only.
+                # Group stage: advance weight scales with knockout_proximity_t so early
+                #   buys are judged mainly on pts, late buys heavily penalise shaky teams.
+                # Knockout rounds: use match win probability (draw→extra time→50/50),
+                #   and give GK/DEF a 1.15× boost (fewer goals → clean sheets matter more).
+                #
+                # All paths also consider remaining fixture count as a tie-breaker:
+                # a team with 3 upcoming games is more valuable than one with 1 even at
+                # the same expected pts per game.
+                def _remaining_games(team_str: str) -> int:
+                    return int(unplayed[
+                        (unplayed["home_team"].astype(str).str.strip() == team_str) |
+                        (unplayed["away_team"].astype(str).str.strip() == team_str)
+                    ].shape[0])
+
+                if is_gap:
+                    in_cands_ok["_in_adv"]   = 0.5
+                    in_cands_ok["_in_score"]  = in_cands_ok["day_pts"]
+                elif _round_is_ko:
+                    in_cands_ok["_in_adv"] = in_cands_ok["team"].astype(str).str.strip().map(
+                        lambda t: compute_ko_win_prob(t, fixtures, groups, advance_probs)
+                    )
+                    # GK/DEF boost: knockout games are tighter, CS premium increases
+                    in_cands_ok["_ko_boost"] = in_cands_ok["position"].str.upper().map(
+                        lambda p: 1.15 if p in ("GK", "DEF") else 1.0
+                    )
+                    # Remaining games bonus: each additional game adds 3% to final score
+                    in_cands_ok["_rem_games"] = in_cands_ok["team"].astype(str).str.strip().map(
+                        lambda t: _remaining_games(t)
+                    )
+                    in_cands_ok["_in_score"] = (
+                        in_cands_ok["day_pts"] * in_cands_ok["_ko_boost"]
+                        * (0.55 + 0.45 * in_cands_ok["_in_adv"])
+                        * (1.0 + 0.03 * (in_cands_ok["_rem_games"] - 1).clip(lower=0))
+                    )
+                else:
+                    # Group stage: advance weight grows linearly from 0.20 (day 1) to 0.45 (last MD)
+                    in_cands_ok["_in_adv"] = in_cands_ok["team"].astype(str).str.strip().map(
+                        lambda t: float((advance_probs or {}).get(t, 0.5))
+                    )
+                    _base_w = 0.80 - 0.25 * knockout_proximity_t   # 0.80 → 0.55
+                    _adv_w  = 1.0 - _base_w                         # 0.20 → 0.45
+                    # Remaining games: small bonus so a team with 2 group games beats
+                    # an equally-rated team with 1 (everything else equal)
+                    in_cands_ok["_rem_games"] = in_cands_ok["team"].astype(str).str.strip().map(
+                        lambda t: _remaining_games(t)
+                    )
+                    in_cands_ok["_in_score"] = (
+                        in_cands_ok["day_pts"] * (_base_w + _adv_w * in_cands_ok["_in_adv"])
+                        * (1.0 + 0.02 * (in_cands_ok["_rem_games"] - 1).clip(lower=0))
+                    )
+
+                best_in = in_cands_ok.nlargest(1, "_in_score").iloc[0]
                 day_pts_in = float(best_in["day_pts"])
 
                 # Deferred-buy check: if the IN player has a significantly better fixture
@@ -1631,52 +1840,96 @@ def get_transfer_schedule(
                     if _deferred:
                         continue
 
-                # Gain = in-player's pts today vs out-player's pts today (they don't play → 0).
-                # Apply threshold that scales with how many transfers we have left.
-                # Gap days bypass the threshold (any coverage is better than none).
+                # Gain threshold: scales with transfers remaining.
+                # Gap days bypass — any coverage beats none.
                 if day_pts_in < min_gain_threshold and not is_gap:
                     continue
 
+                # Extra barrier for risky buys.
+                # The survival-probability cutoff rises as we approach / enter knockouts:
+                #   early group stage → 0.45 (only block near-certain eliminations)
+                #   late group stage  → 0.65 (block borderline teams)
+                #   knockout rounds   → 0.65 (use KO win prob — don't buy a team likely
+                #                            to lose their very next match)
+                in_adv_prelim = float(best_in.get("_in_adv", 0.5))
+                _risky_cutoff = 0.45 + 0.20 * knockout_proximity_t   # 0.45 → 0.65
+                if not is_gap and in_adv_prelim < _risky_cutoff:
+                    extra_factor = 1.0 + (_risky_cutoff - in_adv_prelim) * 0.8
+                    if _round_is_ko:
+                        extra_factor = max(extra_factor, 1.6)  # knockout buys need clear value
+                    if day_pts_in < min_gain_threshold * extra_factor:
+                        continue
+
                 out_avg = float(worst_out.get("exp_pts", 0))
-                pts_gain = round(day_pts_in - out_avg, 1)  # quality delta for display
+                pts_gain = round(day_pts_in - out_avg, 1)
 
                 in_val  = parse_value(best_in.get("value", 0))
                 out_val_disp = parse_value(worst_out.get("value", 0))
                 value_note = f"  ·  ↑ {in_val/1000:.0f}k" if in_val > out_val_disp + 50_000 else ""
 
-                # "Buy back later" — check whether out-player's fixtures improve
-                # significantly in the second half of the tournament.
                 out_team_str  = str(worst_out.get("team", "")).strip()
                 in_team_str   = str(best_in.get("team", ""))
                 near_diff     = fixture_difficulty(out_team_str, fixtures, groups, next_n=2)
                 late_diff     = fixture_difficulty(out_team_str, fixtures, groups, next_n=6)
                 can_buy_back  = bool(late_diff > near_diff + 15)
 
-                # Advance probability for the in-player — warn if their team may not advance
-                in_adv  = (advance_probs or {}).get(in_team_str, 0.5)
-                out_adv = (advance_probs or {}).get(out_team_str, 0.5)
+                # In knockout rounds use KO win prob; in group stage use advance prob
+                if _round_is_ko:
+                    in_adv  = compute_ko_win_prob(in_team_str, fixtures, groups, advance_probs)
+                    out_adv = compute_ko_win_prob(out_team_str, fixtures, groups, advance_probs)
+                    _adv_label = "ko win prob"
+                    _sell_label = "sell before next round"
+                else:
+                    in_adv  = float((advance_probs or {}).get(in_team_str, 0.5))
+                    out_adv = float((advance_probs or {}).get(out_team_str, 0.5))
+                    _adv_label = "to advance"
+                    _sell_label = "sell before knockouts"
+
+                # Short-term cutoff rises from 0.45 early in group stage to 0.65 at knockouts
+                _short_term_cutoff = 0.45 + 0.20 * knockout_proximity_t
+                is_short_term = (in_adv < _short_term_cutoff) and not is_gap
+
                 adv_note = ""
-                if in_adv < 0.40:
-                    adv_note = f"  ·  ⚠ {in_team_str} advance prob {in_adv:.0%}"
-                elif out_adv < 0.40 and out_adv > 0.0:
-                    adv_note = f"  ·  sell: {out_team_str} advance prob only {out_adv:.0%}"
+                sell_intent_note = ""
+                _warn_thresh = _short_term_cutoff - 0.15   # hard-warn below this
+                if in_adv < _warn_thresh:
+                    adv_note = f"  ·  ⚠ {in_team_str} only {in_adv:.0%} {_adv_label}"
+                elif is_short_term:
+                    adv_note = f"  ·  {in_team_str} {in_adv:.0%} {_adv_label}"
+                elif out_adv < _warn_thresh and out_adv > 0.0:
+                    adv_note = f"  ·  sell: {out_team_str} only {out_adv:.0%} {_adv_label}"
+
+                if is_short_term:
+                    sell_intent_note = f"  ·  SHORT-TERM BUY — {_sell_label}"
+
+                # Concentration note: warn when this buy creates a 2-player cluster
+                # (which is fine but worth knowing) or when selling reduces an over-cluster
+                _in_count_after  = _team_counts.get(in_team_str, 0) + 1
+                _out_count_before = _team_counts.get(out_team_str, 0)
+                conc_note = ""
+                if _in_count_after >= 2:
+                    conc_note = f"  ·  {_in_count_after}× {in_team_str} in squad"
+                if _out_count_before > _max_same_team:
+                    conc_note += f"  ·  reduces {out_team_str} cluster"
 
                 swap = {
-                    "transfer_date":  d_str,
-                    "days_until":     days_until,
-                    "out":            display_name(str(worst_out["name"])),
-                    "out_team":       out_team_str,
-                    "in":             display_name(str(best_in["name"])),
-                    "in_team":        in_team_str,
-                    "position":       pos,
-                    "day_pts":        round(day_pts_in, 1),
-                    "pts_gain":       pts_gain,
-                    "is_gap_day":     is_gap,
-                    "can_buy_back":   can_buy_back,
+                    "transfer_date":   d_str,
+                    "days_until":      days_until,
+                    "out":             display_name(str(worst_out["name"])),
+                    "out_team":        out_team_str,
+                    "in":              display_name(str(best_in["name"])),
+                    "in_team":         in_team_str,
+                    "position":        pos,
+                    "day_pts":         round(day_pts_in, 1),
+                    "pts_gain":        pts_gain,
+                    "is_gap_day":      is_gap,
+                    "can_buy_back":    can_buy_back,
                     "in_advance_prob": round(in_adv, 2),
-                    "reason":         (
+                    "is_short_term":   is_short_term,
+                    "is_ko_round":     _round_is_ko,
+                    "reason":          (
                         f"Plays {d_str}  ·  ~{day_pts_in:.1f} pts today  ·  "
-                        f"out-player avg {out_avg:.1f}{value_note}{adv_note}"
+                        f"out-player avg {out_avg:.1f}{value_note}{adv_note}{sell_intent_note}{conc_note}"
                         + ("  ·  Rebuy candidate" if can_buy_back else "")
                     ),
                 }
