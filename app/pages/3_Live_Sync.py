@@ -58,24 +58,26 @@ with tab_fs:
             pass
 
     fetch_lineups = st.checkbox(
-        "Also fetch confirmed lineups",
+        "Also fetch confirmed lineups, goalscorers & assists",
         value=True,
         help=(
-            "Makes one extra HTTP request per finished match to get the starting XI. "
-            "Disable if you only want scores quickly."
+            "Makes two extra HTTP requests per finished match to get the starting XI, "
+            "goalscorers, and assists. Disable if you only want scores quickly."
         ),
     )
 
     if st.button("⚡ Sync from Flashscore", type="primary"):
-        existing_results = load_csv("results.csv")
-        existing_lineups = load_csv("lineups.csv")
+        existing_results      = load_csv("results.csv")
+        existing_lineups      = load_csv("lineups.csv")
+        existing_player_stats = load_csv("player_stats.csv")
 
         with st.spinner("Fetching from Flashscore…"):
             try:
                 out = sync_flashscore(
                     existing_results,
                     existing_lineups,
-                    fetch_lineups=fetch_lineups,
+                    existing_player_stats=existing_player_stats,
+                    fetch_details=fetch_lineups,
                 )
             except ScrapeError as e:
                 st.error(f"**Sync failed:** {e}")
@@ -107,8 +109,9 @@ with tab_fs:
                 for e in out["errors"]:
                     st.warning(e)
 
-        save_csv("results.csv", out["results"])
-        save_csv("lineups.csv", out["lineups"])
+        save_csv("results.csv",      out["results"])
+        save_csv("lineups.csv",      out["lineups"])
+        save_csv("player_stats.csv", out["player_stats"])
         now_str = datetime.datetime.now().isoformat(timespec="seconds")
         save_last_sync(now_str)
         st.caption(
@@ -146,10 +149,38 @@ with tab_fs:
     if played.empty:
         st.info("No results recorded yet.")
     else:
-        disp = played[["date", "home_team", "home_score", "away_score", "away_team", "goalscorers"]].copy()
-        disp.columns = ["Date", "Home", "H", "A", "Away", "Goalscorers"]
+        cols = ["date", "home_team", "home_score", "away_score", "away_team", "goalscorers"]
+        if "assists" in played.columns:
+            cols.append("assists")
+        disp = played[cols].copy()
+        disp.columns = ["Date", "Home", "H", "A", "Away", "Goalscorers"] + (["Assists"] if "assists" in played.columns else [])
         st.dataframe(disp, use_container_width=True, hide_index=True)
         st.caption(f"**{len(played)} played** · {len(results) - len(played)} remaining")
+
+    # Player stats
+    player_stats = load_csv("player_stats.csv")
+    if not player_stats.empty:
+        st.markdown("### Player Stats")
+        top_scorers = (
+            player_stats.groupby("player_name")
+            .agg(team=("team", "first"), goals=("goals", "sum"), assists=("assists", "sum"))
+            .reset_index()
+            .sort_values(["goals", "assists"], ascending=False)
+        )
+        top_scorers = top_scorers[top_scorers["goals"].astype(float) > 0]
+        if not top_scorers.empty:
+            st.markdown("**Top scorers**")
+            st.dataframe(top_scorers.head(20), use_container_width=True, hide_index=True)
+        top_assists = (
+            player_stats.groupby("player_name")
+            .agg(team=("team", "first"), assists=("assists", "sum"), goals=("goals", "sum"))
+            .reset_index()
+            .sort_values(["assists", "goals"], ascending=False)
+        )
+        top_assists = top_assists[top_assists["assists"].astype(float) > 0]
+        if not top_assists.empty:
+            st.markdown("**Top assisters**")
+            st.dataframe(top_assists.head(20), use_container_width=True, hide_index=True)
 
     # Model impact
     if not played.empty:

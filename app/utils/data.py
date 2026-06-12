@@ -22,7 +22,11 @@ SCHEMAS = {
     "lineups.csv": ["team", "player_name", "position", "formation"],
     "results.csv": [
         "match_id", "date", "home_team", "away_team",
-        "home_score", "away_score", "goalscorers",
+        "home_score", "away_score", "goalscorers", "assists",
+    ],
+    "player_stats.csv": [
+        "match_id", "date", "player_name", "team", "opponent",
+        "goals", "assists", "started", "minutes", "position",
     ],
 }
 
@@ -31,7 +35,8 @@ NUMERIC_COLUMNS = {
     "fixtures.csv":  ["match_id", "matchday"],
     "groups.csv":    ["fifa_ranking"],
     "form.csv":      ["pos", "p", "w", "d", "l", "f", "a", "gd", "pts"],
-    "results.csv":   ["match_id", "home_score", "away_score"],
+    "results.csv":      ["match_id", "home_score", "away_score"],
+    "player_stats.csv": ["goals", "assists", "started", "minutes"],
 }
 
 

@@ -27,7 +27,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from utils.flashscore import _get, _parse_record, WC_SCOREBOARD_URL, ScrapeError
+from utils.flashscore import _get, _parse_block_first as _parse_record, WC_SCOREBOARD_URL, ScrapeError
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
