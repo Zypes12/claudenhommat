@@ -182,6 +182,16 @@ def _enrich_with_team(players: pd.DataFrame, lineups: pd.DataFrame) -> pd.DataFr
         last_to_teams.setdefault(last, set()).add(team)
     ambiguous_last: set[str] = {k for k, v in last_to_teams.items() if len(v) > 1}
 
+    # Build secondary lookup for "Lastname I." format (e.g. "Quinones J." → Mexico)
+    # Key = "lastname_initial" to resolve "Quiñones Julián" → "quinones_j" → Mexico
+    initial_map: dict[str, str] = {}
+    for key, team in lineup_map.items():
+        key_parts = key.split()
+        if len(key_parts) == 2 and key_parts[1].endswith(".") and len(key_parts[1]) == 2:
+            init_key = key_parts[0] + "_" + key_parts[1][0]
+            if init_key not in initial_map:
+                initial_map[init_key] = team
+
     def find_team(player_name: str) -> str:
         norm_player = _norm(player_name)
         parts = norm_player.split()
@@ -200,9 +210,25 @@ def _enrich_with_team(players: pd.DataFrame, lineups: pd.DataFrame) -> pd.DataFr
             if compound in lineup_map:
                 return lineup_map[compound]
 
+        # 4. Lastname + first-initial match (lineup uses "Quinones J." format)
+        if len(parts) >= 2:
+            init_key = parts[0] + "_" + parts[1][0]
+            if init_key in initial_map:
+                return initial_map[init_key]
+
+        # 5. If players.csv already has a team column, fall through — handled in caller
         return ""
 
-    df["team"] = df["name"].astype(str).apply(find_team)
+    lineup_resolved = df["name"].astype(str).apply(find_team)
+
+    # If players.csv already carries a "team" column, use it as a fallback for
+    # players not found in lineups (covers bench/rotation players not in the XI).
+    if "team" in df.columns:
+        existing = df["team"].astype(str).str.strip()
+        df["team"] = lineup_resolved.where(lineup_resolved != "", existing)
+    else:
+        df["team"] = lineup_resolved
+
     return df
 
 

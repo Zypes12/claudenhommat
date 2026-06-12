@@ -1,3 +1,4 @@
+import json
 import pandas as pd
 from pathlib import Path
 
@@ -9,8 +10,9 @@ SCHEMAS = {
         "home_team", "away_team", "group",
     ],
     "players.csv": [
-        "name", "value", "position", "penalties",
+        "name", "team", "value", "position", "penalties",
         "penalty_taker", "set_piece_role", "in_squad", "is_captain",
+        "value_change_pct",
     ],
     "groups.csv": [
         "team", "group", "fifa_ranking",
@@ -76,3 +78,19 @@ def load_csv(filename: str) -> pd.DataFrame:
 def save_csv(filename: str, df: pd.DataFrame) -> None:
     path = DATA_DIR / filename
     df.to_csv(path, index=False)
+
+
+_TRANSFER_STATE = DATA_DIR / "transfer_state.json"
+
+
+def load_transfer_count() -> int:
+    if not _TRANSFER_STATE.exists():
+        return 0
+    try:
+        return int(json.loads(_TRANSFER_STATE.read_text()).get("transfers_used", 0))
+    except Exception:
+        return 0
+
+
+def save_transfer_count(n: int) -> None:
+    _TRANSFER_STATE.write_text(json.dumps({"transfers_used": int(n)}))

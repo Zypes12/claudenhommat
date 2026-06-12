@@ -190,6 +190,26 @@ def _match_score(fp_name: str, csv_name: str) -> float:
     return score
 
 
+# ── Finnish position names → canonical codes ──────────────────────────────────
+
+_FI_POSITION_MAP = {
+    "maalivahti":    "GK",
+    "puolustaja":    "DEF",
+    "keskikenttä":   "MID",
+    "kenttäpelaaja": "MID",
+    "hyökkääjä":     "FWD",
+    "laitahyökkääjä":"FWD",
+}
+
+
+def _parse_fi_position(text: str) -> str | None:
+    """Return canonical position code from Finnish position text, or None."""
+    for fi, code in _FI_POSITION_MAP.items():
+        if fi in text.lower():
+            return code
+    return None
+
+
 # ── Discover player IDs ───────────────────────────────────────────────────────
 
 def discover_player_ids(
@@ -201,7 +221,6 @@ def discover_player_ids(
     player slugs.  Returns the updated {slug → page-title} store.
     """
     store = _load_id_store()
-    new_found = 0
 
     pages_to_scrape = [PLAYER_LIST_URL] + [
         TEAM_SQUAD_URL.format(slug=s) for s in FP_TEAM_SLUGS
@@ -220,11 +239,58 @@ def discover_player_ids(
 
         for slug in _extract_player_slugs(body):
             if slug not in store:
-                store[slug] = ""   # placeholder; name filled on price fetch
-                new_found += 1
-
+                store[slug] = ""
         if i < total - 1:
             time.sleep(delay)
+
+    _save_id_store(store)
+    return store
+
+
+def scan_all_player_ids(
+    id_max: int = 1150,
+    delay: float = 0.3,
+    progress_callback=None,
+) -> dict[str, str]:
+    """
+    Scan player IDs 1..id_max systematically.
+
+    Only the numeric ID matters in futisporssi URLs — the slug prefix is ignored.
+    This discovers players not reachable via team/leaderboard pages.
+    Returns the updated full store.
+    """
+    store = _load_id_store()
+    # Build reverse map: numeric_id → slug already in store
+    existing_ids: set[int] = set()
+    for slug in store:
+        parts = slug.split("-")
+        if parts and parts[-1].isdigit():
+            existing_ids.add(int(parts[-1]))
+
+    new_found = 0
+    for pid in range(1, id_max + 1):
+        if pid in existing_ids:
+            continue
+
+        if progress_callback:
+            progress_callback(pid, id_max, str(pid))
+
+        url = f"{BASE_URL}/futis/pelaajat/pelaaja/x-{pid}"
+        try:
+            body = _get(url)
+        except FPScrapeError:
+            time.sleep(delay)
+            continue
+
+        parsed = _parse_price(body)
+        if parsed:
+            # Use a generic slug with the real numeric ID
+            slug = f"player-id-{pid}"
+            store[slug] = parsed["name"]
+            existing_ids.add(pid)
+            new_found += 1
+
+        time.sleep(delay)
 
     _save_id_store(store)
     return store
@@ -240,13 +306,12 @@ def fetch_all_prices(
     """
     Fetch price pages for every slug in the store.
 
+    Only the numeric suffix of each slug matters — uses /x-{id} URL form.
     Returns a list of parsed price dicts with an added "slug" key:
       slug, name, current_value, original_value, change_pct
     """
-    # Always load the full store from disk so we never overwrite other entries.
     full_store = _load_id_store()
     if store is not None:
-        # Merge caller-provided store into the full on-disk store.
         full_store.update(store)
 
     results = []
@@ -256,7 +321,15 @@ def fetch_all_prices(
     for i, slug in enumerate(slugs):
         if progress_callback:
             progress_callback(i, total, slug)
-        url = PLAYER_PAGE_URL.format(slug=slug)
+
+        # Extract numeric ID from slug suffix
+        parts = slug.split("-")
+        if parts and parts[-1].isdigit():
+            pid = parts[-1]
+        else:
+            pid = slug   # fall back to full slug if non-numeric
+
+        url = f"{BASE_URL}/futis/pelaajat/pelaaja/x-{pid}"
         try:
             body = _get(url)
         except FPScrapeError:
@@ -277,15 +350,48 @@ def fetch_all_prices(
     return results
 
 
+def fetch_leaderboard_positions() -> dict[str, str]:
+    """
+    Scrape the main players leaderboard and return {fp_name: position_code}.
+
+    Position codes: GK / DEF / MID / FWD.
+    Only returns the ~19 current top performers visible on the page.
+    """
+    try:
+        body = _get(PLAYER_LIST_URL)
+    except FPScrapeError:
+        return {}
+
+    positions: dict[str, str] = {}
+    # Each card: player-name link → team span → small-text li with position
+    cards = re.findall(
+        r'class="player-name"[^>]*>([^<]+)</a>'
+        r'.*?<li class="small-text">(.*?)</li>',
+        body,
+        re.DOTALL,
+    )
+    for raw_name, pos_text in cards:
+        name = raw_name.strip()
+        pos = _parse_fi_position(pos_text)
+        if name and pos:
+            positions[name] = pos
+    return positions
+
+
 # ── Apply prices to players.csv ───────────────────────────────────────────────
 
 def apply_prices(
     players: pd.DataFrame,
     price_data: list[dict],
     match_threshold: float = 0.5,
+    leaderboard_positions: "dict[str, str] | None" = None,
 ) -> tuple[pd.DataFrame, list[str]]:
     """
     Match scraped prices to players.csv rows and update the "value" column.
+
+    Also updates:
+      - value_change_pct: percentage change from original price
+      - position: if leaderboard_positions dict is provided and player appears in it
 
     Returns (updated_players_df, list_of_change_strings).
     Uses fuzzy name matching — at least 50% token overlap required.
@@ -293,8 +399,14 @@ def apply_prices(
     if players.empty or not price_data:
         return players, []
 
+    # Ensure value_change_pct column exists
+    if "value_change_pct" not in players.columns:
+        players = players.copy()
+        players["value_change_pct"] = ""
+
     updated = players.copy()
     changes: list[str] = []
+    lp = leaderboard_positions or {}
 
     for price in price_data:
         fp_name = price["name"]
@@ -314,17 +426,20 @@ def apply_prices(
         new_val = f"{price['current_value']:,} €".replace(",", " ")
         old_val = str(updated.at[best_row_idx, "value"]).strip()
 
-        # Extract numeric part of old value for comparison (ignore encoding differences)
         old_num_str = re.sub(r"[^\d]", "", old_val)
         new_num = price["current_value"]
         old_num = int(old_num_str) if old_num_str else None
 
         updated.at[best_row_idx, "value"] = new_val
+        pct = price["change_pct"]
+        updated.at[best_row_idx, "value_change_pct"] = str(round(pct, 2)) if pct != 0 else ""
 
-        # Only report as a change if the numeric value actually changed
+        # Update position if we have leaderboard data for this player
+        if fp_name in lp and lp[fp_name]:
+            updated.at[best_row_idx, "position"] = lp[fp_name]
+
         if old_num != new_num:
             player_name = str(updated.at[best_row_idx, "name"])
-            pct = price["change_pct"]
             sign = "▲" if pct > 0 else ("▼" if pct < 0 else "=")
             changes.append(
                 f"{player_name}: {old_val} → {new_val} ({sign}{abs(pct):.0f}%)"
@@ -365,7 +480,10 @@ def sync_prices(
         progress_callback=progress_callback,
     )
 
-    updated_players, changes = apply_prices(players, price_data)
+    leaderboard_positions = fetch_leaderboard_positions()
+
+    updated_players, changes = apply_prices(players, price_data,
+                                            leaderboard_positions=leaderboard_positions)
 
     return {
         "players":        updated_players,

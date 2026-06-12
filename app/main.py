@@ -2,11 +2,12 @@ import datetime
 import sys
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from utils.data import load_csv
+from utils.data import load_csv, save_csv, load_transfer_count, save_transfer_count
 from utils.team_form import load_team_form, get_form_stats
 from logic.recommendations import (
     recommend_best_squad, load_user_squad, squad_coverage_gaps,
@@ -14,6 +15,7 @@ from logic.recommendations import (
     squad_fixture_table, display_name, compute_actual_stats, compute_recent_form,
     compute_group_standings, compute_advance_probability,
     BUDGET, CAPTAIN_MULTIPLIER, MAX_TRANSFERS, POS_COLORS, parse_value,
+    expected_matchday_points,
 )
 
 st.set_page_config(
@@ -294,3 +296,115 @@ if not ft.empty:
     st.dataframe(styled, use_container_width=True, hide_index=True)
 else:
     st.info("Fill in Fixtures and Groups data to see the breakdown.")
+
+st.divider()
+
+# ── Quick Transfer ─────────────────────────────────────────────────────────────
+st.markdown("### Quick Transfer")
+st.caption("Pick a player to transfer out and choose their replacement. Confirms instantly.")
+
+_transfers_used = load_transfer_count()
+_transfers_left = MAX_TRANSFERS - _transfers_used
+st.caption(f"Transfers used: **{_transfers_used} / {MAX_TRANSFERS}**  ·  Remaining: **{_transfers_left}**")
+
+if _transfers_left <= 0:
+    st.warning("No transfers remaining.")
+elif squad.empty:
+    st.info("Squad not loaded.")
+else:
+    # ── OUT selector ──────────────────────────────────────────────────────────
+    squad_opts = [("", "— select player to transfer out —")] + [
+        (str(r["name"]), f"{display_name(str(r['name']))}  ({str(r.get('position','?')).upper()}, {str(r.get('team',''))})")
+        for _, r in squad.iterrows()
+    ]
+    out_name = st.selectbox(
+        "Transfer out",
+        options=[o[0] for o in squad_opts],
+        format_func=lambda k: dict(squad_opts).get(k, k),
+        key="qt_out",
+    )
+
+    if out_name:
+        out_row = squad[squad["name"].astype(str).str.strip() == out_name.strip()].iloc[0]
+        out_pos  = str(out_row.get("position", "")).upper()
+        out_val  = parse_value(str(out_row.get("value", 0)))
+
+        # ── Find available replacements ────────────────────────────────────
+        squad_names = set(squad["name"].astype(str).str.strip())
+        avail = players[
+            (~players["name"].astype(str).str.strip().isin(squad_names)) &
+            (players["position"].astype(str).str.upper() == out_pos)
+        ].copy()
+
+        if avail.empty:
+            st.warning(f"No available {out_pos} replacements found.")
+        else:
+            budget_slack = BUDGET - budget_used + out_val
+            avail_ok = avail[avail["value"].apply(parse_value) <= budget_slack].copy()
+            if avail_ok.empty:
+                avail_ok = avail.copy()
+
+            with st.spinner("Ranking replacements…"):
+                avail_ok["_pts"] = avail_ok.apply(
+                    lambda r: expected_matchday_points(r, fixtures, groups, next_n=1, **shared_kwargs),
+                    axis=1,
+                )
+            top10 = avail_ok.nlargest(10, "_pts").reset_index(drop=True)
+
+            # Show ranked table
+            tbl_rows = []
+            for _, r in top10.iterrows():
+                pt = str(r.get("penalty_taker", "")).lower()
+                spr = str(r.get("set_piece_role", "")).lower()
+                flags = []
+                if pt in ("primary", "secondary"):
+                    flags.append("Pen")
+                if spr not in ("no", "none", ""):
+                    flags.append("SP")
+                tbl_rows.append({
+                    "Player":     display_name(str(r["name"])),
+                    "Team":       str(r.get("team", "")),
+                    "Value":      f"{parse_value(str(r['value']))/1_000_000:.2f}M",
+                    "Pts (next)": round(float(r["_pts"]), 1),
+                    "Roles":      " ".join(flags) if flags else "—",
+                })
+            st.dataframe(pd.DataFrame(tbl_rows), use_container_width=True, hide_index=True)
+            st.caption("Pts (next): expected futispörssi points for the next single fixture.")
+
+            # ── IN selector ───────────────────────────────────────────────
+            in_opts = [("", "— select replacement —")] + [
+                (
+                    str(r["name"]),
+                    f"{display_name(str(r['name']))}  —  {str(r.get('team',''))}  —  {parse_value(str(r['value']))/1_000_000:.2f}M  —  {round(float(r['_pts']),1)} pts",
+                )
+                for _, r in top10.iterrows()
+            ]
+            in_name = st.selectbox(
+                "Transfer in",
+                options=[o[0] for o in in_opts],
+                format_func=lambda k: dict(in_opts).get(k, k),
+                key="qt_in",
+            )
+
+            if in_name:
+                c_ok, c_cancel, _ = st.columns([1, 1, 5])
+                with c_ok:
+                    if st.button("Confirm", type="primary", key="qt_confirm"):
+                        fresh = load_csv("players.csv")
+                        fresh.loc[
+                            fresh["name"].astype(str).str.strip() == out_name.strip(), "in_squad"
+                        ] = "False"
+                        fresh.loc[
+                            fresh["name"].astype(str).str.strip() == in_name.strip(), "in_squad"
+                        ] = "True"
+                        save_csv("players.csv", fresh)
+                        new_count = _transfers_used + 1
+                        save_transfer_count(new_count)
+                        st.success(
+                            f"Transferred **{display_name(out_name)}** OUT → **{display_name(in_name)}** IN  "
+                            f"({new_count}/{MAX_TRANSFERS} transfers used)"
+                        )
+                        st.rerun()
+                with c_cancel:
+                    if st.button("Cancel", key="qt_cancel"):
+                        st.rerun()

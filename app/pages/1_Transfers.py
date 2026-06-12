@@ -416,10 +416,15 @@ if not groups.empty and _standings:
         .reset_index(drop=True)
     )
 
+    display_cols = ["Group", "Team", "P", "Pts", "GD", "GF", "Adv%"]
+    _adv_arr  = adv_df["_adv"].values
+    _insq_arr = adv_df["_in_squad"].values
+    display_df = adv_df[display_cols].reset_index(drop=True)
+
     def _adv_style(row):
-        adv = row["_adv"]
-        in_sq = row["_in_squad"]
-        bg = ""
+        i = row.name
+        adv   = _adv_arr[i]
+        in_sq = _insq_arr[i]
         if adv >= 0.90:   bg = "background-color:#14532d"
         elif adv >= 0.60: bg = "background-color:#1c4f1c"
         elif adv >= 0.35: bg = "background-color:#78350f"
@@ -427,10 +432,8 @@ if not groups.empty and _standings:
         border = ";outline: 2px solid gold" if in_sq else ""
         return [f"{bg}{border};color:white"] * len(row)
 
-    display_cols = ["Group", "Team", "P", "Pts", "GD", "GF", "Adv%"]
-    styled_adv = adv_df[display_cols + ["_adv", "_in_squad"]].style.apply(_adv_style, axis=1)
     st.dataframe(
-        styled_adv[display_cols],
+        display_df.style.apply(_adv_style, axis=1),
         use_container_width=True,
         hide_index=True,
     )
