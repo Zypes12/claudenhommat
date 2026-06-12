@@ -720,8 +720,14 @@ def recommend_transfers(
             lambda r: expected_matchday_points(r, fixtures, groups, form=form, actual_stats=actual_stats, form_stats=form_stats), axis=1
         )
 
-    top_in  = available.nlargest(n_suggestions, "exp_pts")
-    worst_out = squad_pos.nsmallest(n_suggestions, "exp_pts")
+    # Budget constraint: in-player must fit within cap after selling the weakest out-player.
+    budget_used = squad_budget_used(squad_df)
+    worst_out   = squad_pos.nsmallest(n_suggestions, "exp_pts")
+    min_out_val = worst_out["value"].apply(parse_value).min() if not worst_out.empty else 0
+    budget_slack = BUDGET - budget_used + min_out_val
+    affordable = available[available["value"].apply(parse_value) <= budget_slack]
+
+    top_in = affordable.nlargest(n_suggestions, "exp_pts")
 
     def row_to_dict(row):
         pt  = str(row.get("penalty_taker", "")).lower()
@@ -851,6 +857,7 @@ def get_transfer_schedule(
         today = datetime.date.today()
 
     squad_teams = set(squad_df["team"].astype(str).str.strip().tolist())
+    budget_used = squad_budget_used(squad_df)
 
     unplayed = fixtures.copy()
     if "home_score" in fixtures.columns:
@@ -1033,17 +1040,24 @@ def get_transfer_schedule(
                 if in_cands.empty or out_cands.empty:
                     continue
 
-                # Best available player for today
-                best_in = in_cands.nlargest(1, "day_pts").iloc[0]
-
                 # Worst squad player of the same position not playing today
-                # Use overall exp_pts as their "value" — we give that up by swapping them out
+                # Pick out-player first so we know the budget freed up.
                 if "exp_pts" not in out_cands.columns:
                     out_cands = out_cands.copy()
                     out_cands["exp_pts"] = out_cands.apply(
                         lambda r: expected_matchday_points(r, fixtures, groups, form=form, actual_stats=actual_stats, form_stats=form_stats), axis=1
                     )
                 worst_out = out_cands.nsmallest(1, "exp_pts").iloc[0]
+
+                # Budget: selling worst_out frees their value; in-player must fit within cap.
+                out_val_budget = parse_value(worst_out.get("value", 0))
+                budget_slack = BUDGET - budget_used + out_val_budget
+                in_cands_affordable = in_cands[in_cands["value"].apply(parse_value) <= budget_slack]
+                if in_cands_affordable.empty:
+                    continue
+
+                # Best affordable available player for today
+                best_in = in_cands_affordable.nlargest(1, "day_pts").iloc[0]
 
                 day_pts_in = float(best_in["day_pts"])
                 # Out-player scores 0 today (they don't play); we compare day gain vs their avg

@@ -16,6 +16,7 @@ from utils.football_api import (
     APIError,
 )
 from utils.flashscore import sync_flashscore, ScrapeError
+from utils.futisporssi import sync_prices, discover_player_ids, FPScrapeError
 from utils.team_form import (
     fetch_all_teams_form, load_team_form, save_team_form,
     get_form_stats, FORM_COLUMNS,
@@ -24,12 +25,13 @@ from utils.team_form import (
 st.set_page_config(page_title="Live Sync", page_icon="🔗", layout="wide")
 st.title("🔗 Live Data Sync")
 st.caption(
-    "Three data sources — Flashscore for live results + lineups, "
-    "football-data.org for results via API, and pre-tournament team form scraper."
+    "Four data sources — Flashscore for results + lineups, "
+    "Futispörssi for live player prices, pre-tournament form, and football-data.org."
 )
 
-tab_fs, tab_form, tab_fdorg = st.tabs([
+tab_fs, tab_prices, tab_form, tab_fdorg = st.tabs([
     "⚡ Flashscore  (results + lineups, no key)",
+    "💰 Player Prices  (futisporssi.fi)",
     "📊 Pre-tournament Form  (last 5 matches per team)",
     "📡 football-data.org  (results only)",
 ])
@@ -211,8 +213,103 @@ with tab_fs:
                 )
 
 
+
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB 2 — Pre-tournament team form
+# TAB 2 — Player Prices (futisporssi.fi)
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab_prices:
+    st.markdown("### Futispörssi Player Prices")
+    st.caption(
+        "Scrapes live player values from **futisporssi.fi** — no login required. "
+        "Player prices change after each match day based on goals, assists, and popularity. "
+        "Run after each game day to keep your `players.csv` values current. "
+        "Player IDs are discovered gradually as players appear on public leaderboards — "
+        "early in the tournament you'll see fewer players; coverage improves with each match day."
+    )
+
+    from pathlib import Path as _Path
+    _id_store_path = _Path(__file__).parent.parent.parent / "Data" / "fp_player_ids.json"
+    _known = 0
+    if _id_store_path.exists():
+        import json as _json
+        try:
+            _known = len(_json.loads(_id_store_path.read_text()))
+        except Exception:
+            pass
+
+    st.info(
+        f"**{_known} player IDs** currently in local store. "
+        "IDs are discovered from public leaderboards — the store grows after each game day."
+    )
+
+    col_disc, col_full = st.columns(2)
+
+    with col_disc:
+        if st.button("🔍 Discover new player IDs only", help="Fast: scrapes leaderboard + team pages to find new player slugs (~1 min). Does not update prices."):
+            with st.spinner("Scraping team pages for new player IDs…"):
+                try:
+                    store = discover_player_ids(delay=0.8)
+                    st.success(f"Done — **{len(store)} player IDs** now in store.")
+                except FPScrapeError as e:
+                    st.error(f"Failed: {e}")
+
+    with col_full:
+        if st.button("💰 Discover + fetch all prices", type="primary", help="Full sync: discover IDs then fetch price for each (~3–5 min depending on how many players are known)."):
+            players_df = load_csv("players.csv")
+            progress_bar = st.progress(0.0, text="Starting…")
+            status_text  = st.empty()
+
+            def _price_progress(done, total, slug):
+                pct = done / max(total, 1)
+                progress_bar.progress(pct, text=f"Fetching {slug}… ({done}/{total})")
+                status_text.caption(f"Last: **{slug}**")
+
+            try:
+                result = sync_prices(
+                    players_df,
+                    delay=1.0,
+                    discover_new=True,
+                    discover_delay=0.8,
+                    progress_callback=_price_progress,
+                )
+            except FPScrapeError as e:
+                st.error(f"Sync failed: {e}")
+                st.stop()
+
+            progress_bar.progress(1.0, text="Done!")
+            status_text.empty()
+
+            save_csv("players.csv", result["players"])
+
+            st.success(
+                f"**{result['prices_fetched']} prices fetched** from futisporssi.fi  ·  "
+                f"{result['known_slugs']} player IDs in store"
+            )
+            if result["changes"]:
+                st.markdown(f"**{len(result['changes'])} price changes:**")
+                for c in result["changes"]:
+                    st.markdown(f"- {c}")
+            else:
+                st.info("No price changes detected — values already up to date.")
+
+    st.divider()
+
+    # Show current squad prices
+    st.markdown("### Current Player Values")
+    _players = load_csv("players.csv")
+    _mask = _players["in_squad"].astype(str).str.strip().str.lower() == "true"
+    _squad = _players[_mask][["name", "position", "value"]].copy()
+    if not _squad.empty:
+        st.markdown("**My Squad**")
+        st.dataframe(_squad, use_container_width=True, hide_index=True)
+
+    with st.expander("All players by value"):
+        _all = _players[["name", "position", "value"]].copy()
+        st.dataframe(_all.sort_values("value", ascending=False), use_container_width=True, hide_index=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB 3 — Pre-tournament team form
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab_form:
     st.markdown("### Pre-tournament Form Scraper")
