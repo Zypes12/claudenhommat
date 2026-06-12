@@ -7,8 +7,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.data import load_csv, save_csv
 
-st.set_page_config(page_title="Data", page_icon="🗂️", layout="wide")
-st.title("🗂️  Data Management")
+st.set_page_config(page_title="Data", layout="wide")
+st.title("Data Management")
 st.caption("Edit any table and press Save. Changes are written to the CSV files in Data/.")
 
 tabs = st.tabs(["Players", "Fixtures", "Groups", "Form", "Lineups", "Results"])

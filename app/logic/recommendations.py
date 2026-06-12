@@ -44,10 +44,71 @@ VALID_FORMATIONS = ["4-4-2", "4-3-3", "4-5-1", "3-5-2", "3-4-3", "5-3-2", "5-4-1
 
 POS_COLORS = {"GK": "#f59e0b", "DEF": "#22c55e", "MID": "#3b82f6", "FWD": "#ef4444"}
 
+# WC 2026 host nations — treated as ~7 FIFA ranks stronger than their actual ranking
+# because playing in front of a home crowd at familiar venues.
+HOST_NATIONS: frozenset[str] = frozenset({"USA", "United States", "Canada", "Mexico"})
+HOME_RANK_BOOST: float = 7.0
+
 # Goals per game at the position level vs an average opponent (FIFA rank ~50).
-# FWD ~0.25, attacking MID ~0.08; GK almost never scores.
 BASE_GOAL_RATE = {"GK": 0.01, "DEF": 0.04, "MID": 0.08, "FWD": 0.25}
-ASSIST_PER_GOAL = 0.40  # assists credited per goal scored by the same player
+
+# Assists per game — separate from goal rate because playmakers (MIDs) create
+# chances for others; strikers mostly finish, not create.
+BASE_ASSIST_RATE = {"GK": 0.005, "DEF": 0.025, "MID": 0.10, "FWD": 0.06}
+
+# Shot-to-goal conversion rate by position — used to estimate shots on target
+# from expected goals (SoT = exp_goals / conversion_rate).
+SHOT_CONVERSION = {"GK": 0.0, "DEF": 0.07, "MID": 0.12, "FWD": 0.18}
+
+# Baseline shots on target per game against a rank-50 opponent in WC matches.
+# WC 2022 average was ~3.4 SoT per team per game.
+AVG_SOT_AGAINST = 3.4
+
+# Confederation qualifying difficulty.
+# A team's raw qualifying GPG is multiplied by this before computing attack_factor,
+# so that e.g. Egypt's 3.2 gpg in AFCON (CAF=0.60) ≈ a UEFA team scoring 1.9 gpg.
+# Ensures European form is the baseline — not inflated by weak-opposition qualifying.
+CONFEDERATION_STRENGTH: dict[str, float] = {
+    "UEFA":     1.00,   # European qualifying: hardest — rank 10-70 opposition
+    "CONMEBOL": 0.85,   # South American: rank 5-60 opposition
+    "AFC":      0.72,   # Asian: rank 50-150, competitive within region
+    "CONCACAF": 0.65,   # North/Central American: moderate opposition
+    "CAF":      0.58,   # African: opposition often rank 60-150
+    "OFC":      0.40,   # Oceania: weakest confederation
+}
+
+TEAM_CONFEDERATION: dict[str, str] = {
+    # UEFA
+    "Czechia": "UEFA", "Switzerland": "UEFA", "Scotland": "UEFA",
+    "Bosnia and Herzegovina": "UEFA", "Türkiye": "UEFA", "Turkey": "UEFA",
+    "Germany": "UEFA", "Sweden": "UEFA", "Netherlands": "UEFA",
+    "Belgium": "UEFA", "Spain": "UEFA", "Norway": "UEFA",
+    "France": "UEFA", "Austria": "UEFA", "Portugal": "UEFA",
+    "England": "UEFA", "Croatia": "UEFA", "Denmark": "UEFA",
+    "Serbia": "UEFA", "Poland": "UEFA", "Ukraine": "UEFA",
+    # CONMEBOL
+    "Brazil": "CONMEBOL", "Paraguay": "CONMEBOL", "Ecuador": "CONMEBOL",
+    "Uruguay": "CONMEBOL", "Argentina": "CONMEBOL", "Colombia": "CONMEBOL",
+    "Chile": "CONMEBOL", "Peru": "CONMEBOL",
+    # CAF
+    "South Africa": "CAF", "Morocco": "CAF", "Côte d'Ivoire": "CAF",
+    "Ivory Coast": "CAF", "Tunisia": "CAF", "Egypt": "CAF",
+    "Cabo Verde": "CAF", "Cape Verde": "CAF", "Senegal": "CAF",
+    "Algeria": "CAF", "Congo DR": "CAF", "Ghana": "CAF",
+    "Nigeria": "CAF", "Cameroon": "CAF", "Mali": "CAF",
+    # CONCACAF
+    "Mexico": "CONCACAF", "Canada": "CONCACAF", "Haiti": "CONCACAF",
+    "USA": "CONCACAF", "United States": "CONCACAF", "Curaçao": "CONCACAF",
+    "Curacao": "CONCACAF", "Panama": "CONCACAF", "Costa Rica": "CONCACAF",
+    "Jamaica": "CONCACAF", "Honduras": "CONCACAF",
+    # AFC
+    "Korea Republic": "AFC", "South Korea": "AFC", "Qatar": "AFC",
+    "Australia": "AFC", "Japan": "AFC", "IR Iran": "AFC", "Iran": "AFC",
+    "Saudi Arabia": "AFC", "Iraq": "AFC", "Uzbekistan": "AFC",
+    "Jordan": "AFC", "China": "AFC", "India": "AFC",
+    # OFC
+    "New Zealand": "OFC",
+}
 
 
 # ── Value parsing ──────────────────────────────────────────────────────────────
@@ -159,13 +220,44 @@ def get_team_ranking(team: str, groups: pd.DataFrame) -> float:
         return 50.0
 
 
+def _expected_tier_pts(exp_count: float) -> float:
+    """
+    Expected points from a tiered bonus (1-2→+1, 3-4→+2, 5-6→+3, 7-8→+4, 9+→+5).
+
+    Used for both GK saves and shots-on-target bonuses. Models the count as a
+    Poisson random variable and computes the expectation of the tier value.
+    Uses the incremental PMF formula to avoid factorial overflow.
+    """
+    if exp_count <= 0:
+        return 0.0
+    pts = 0.0
+    p_k = math.exp(-exp_count)  # P(k=0); we start from k=1 below
+    for k in range(1, 25):
+        p_k = p_k * exp_count / k          # P(k) = P(k-1) × λ/k
+        tier = min(5, (k - 1) // 2 + 1)   # 1-2→1, 3-4→2, 5-6→3, 7-8→4, 9+→5
+        pts += p_k * tier
+        if p_k < 1e-9:
+            break
+    return pts
+
+
 def _result_probs(team_rank: float, opp_rank: float) -> tuple[float, float, float]:
-    rank_diff = opp_rank - team_rank
-    raw_win = 1 / (1 + math.exp(-rank_diff * 0.04))
-    draw = 0.22
-    win = min(max(raw_win - draw / 2, 0.05), 0.85)
-    loss = max(1.0 - win - draw, 0.05)
-    return win, draw, loss
+    """
+    Return (win, draw, loss) probabilities that always sum to 1.0.
+
+    Draw probability decreases as the rank gap widens — closely matched teams
+    draw far more often than mismatches.  Win/loss take the remaining probability
+    proportionally from the logistic win-rate estimate.
+    """
+    rank_diff = opp_rank - team_rank            # positive = weaker opponent
+    p_win_base = 1 / (1 + math.exp(-rank_diff * 0.04))
+    # Draw more likely in close fixtures; decay exponentially with rank gap
+    p_draw = max(0.08, 0.28 * math.exp(-0.003 * abs(rank_diff)))
+    remaining = 1.0 - p_draw
+    p_win  = max(0.03, p_win_base  * remaining)
+    p_loss = max(0.03, (1 - p_win_base) * remaining)
+    total = p_win + p_draw + p_loss
+    return p_win / total, p_draw / total, p_loss / total
 
 
 def fixture_difficulty(
@@ -205,6 +297,8 @@ def _opp_goal_factor(opp_rank: float) -> float:
 def get_team_attack_rate(team: str, form: "pd.DataFrame | None") -> float:
     """
     Goals per game from qualifying form, normalised so 1.8 gpg → factor 1.0.
+    Applies confederation strength so that, e.g., Egypt's AFCON gpg is weighted
+    at 0.58× before comparison with UEFA teams (UEFA = 1.0 baseline).
     Returns factor in [0.5, 1.8]; falls back to 1.0 (neutral) when no data.
     """
     if form is None or (hasattr(form, "empty") and form.empty) or not team:
@@ -218,10 +312,27 @@ def get_team_attack_rate(team: str, form: "pd.DataFrame | None") -> float:
         f = float(row.iloc[0]["f"]) if row.iloc[0]["f"] else 0
         if p > 0:
             gpg = f / p
-            return min(1.8, max(0.5, gpg / 1.8))
+            conf = TEAM_CONFEDERATION.get(team.strip(), "UEFA")
+            conf_weight = CONFEDERATION_STRENGTH.get(conf, 1.0)
+            effective_gpg = gpg * conf_weight
+            return min(1.8, max(0.5, effective_gpg / 1.8))
     except (ValueError, TypeError):
         pass
     return 1.0
+
+
+# ── Name parsing helper ───────────────────────────────────────────────────────
+
+def _parse_player_names(raw: str) -> list[str]:
+    """Extract normalised player names from a goalscorers/assists string."""
+    names = []
+    for entry in raw.split(","):
+        name = re.sub(r"\(.*?\)", "", entry)
+        name = re.sub(r"\d+[''`′]?", "", name)
+        name = name.strip()
+        if name:
+            names.append(_norm(name))
+    return names
 
 
 # ── Actual tournament results ─────────────────────────────────────────────────
@@ -248,6 +359,7 @@ def compute_actual_stats(results: "pd.DataFrame | None") -> dict:
     team_ga: dict[str, int] = {}
     team_games: dict[str, int] = {}
     player_goals: dict[str, int] = {}
+    player_assists: dict[str, int] = {}
 
     for _, row in results.iterrows():
         home = str(row.get("home_team", "")).strip()
@@ -265,28 +377,209 @@ def compute_actual_stats(results: "pd.DataFrame | None") -> dict:
             continue
 
         for t, gf, ga in [(home, hs, as_), (away, as_, hs)]:
-            team_gf[t]     = team_gf.get(t, 0) + gf
-            team_ga[t]     = team_ga.get(t, 0) + ga
-            team_games[t]  = team_games.get(t, 0) + 1
+            team_gf[t]    = team_gf.get(t, 0) + gf
+            team_ga[t]    = team_ga.get(t, 0) + ga
+            team_games[t] = team_games.get(t, 0) + 1
 
-        # Parse goalscorers: "Messi 35', Ronaldo (Portugal) 78', ..."
         gs_raw = str(row.get("goalscorers", "")).strip()
         if gs_raw and gs_raw.lower() not in ("", "nan"):
-            for entry in gs_raw.split(","):
-                name = re.sub(r"\(.*?\)", "", entry)       # remove (team)
-                name = re.sub(r"\d+[''`′]?", "", name)    # remove minute markers
-                name = name.strip()
-                if name:
-                    player_goals[_norm(name)] = player_goals.get(_norm(name), 0) + 1
+            for n in _parse_player_names(gs_raw):
+                player_goals[n] = player_goals.get(n, 0) + 1
+
+        as_raw_str = str(row.get("assists", "")).strip()
+        if as_raw_str and as_raw_str.lower() not in ("", "nan"):
+            for n in _parse_player_names(as_raw_str):
+                player_assists[n] = player_assists.get(n, 0) + 1
 
     team_attack  = {t: team_gf.get(t, 0) / g for t, g in team_games.items()}
     team_defense = {t: team_ga.get(t, 0) / g for t, g in team_games.items()}
     return {
-        "team_games":   team_games,
-        "team_attack":  team_attack,
-        "team_defense": team_defense,
-        "player_goals": player_goals,
+        "team_games":     team_games,
+        "team_attack":    team_attack,
+        "team_defense":   team_defense,
+        "player_goals":   player_goals,
+        "player_assists": player_assists,
     }
+
+
+def compute_recent_form(results: "pd.DataFrame | None", n_recent_days: int = 2) -> set:
+    """
+    Returns a set of normalised player names who scored or assisted in the
+    most recent n_recent_days of completed match dates.
+
+    Used to apply a short-term form boost (×1.15) in expected_matchday_points.
+    The boost is intentionally mild and self-correcting — as more games are
+    played, the actual_stats blending in expected_matchday_points dominates.
+    """
+    if results is None or (hasattr(results, "empty") and results.empty):
+        return set()
+
+    played_rows = []
+    for _, row in results.iterrows():
+        hs = str(row.get("home_score", "")).strip()
+        as_ = str(row.get("away_score", "")).strip()
+        if hs and as_ and hs not in ("", "nan") and as_ not in ("", "nan"):
+            try:
+                int(float(hs))
+                played_rows.append(row)
+            except (ValueError, TypeError):
+                pass
+
+    if not played_rows:
+        return set()
+
+    played_df = pd.DataFrame(played_rows)
+    dates = sorted(played_df["date"].astype(str).str.strip().unique(), reverse=True)
+    recent_dates = set(dates[:n_recent_days])
+    recent = played_df[played_df["date"].astype(str).str.strip().isin(recent_dates)]
+
+    hot: set = set()
+    for _, row in recent.iterrows():
+        for col in ("goalscorers", "assists"):
+            raw = str(row.get(col, "")).strip()
+            if raw and raw.lower() != "nan":
+                for name in _parse_player_names(raw):
+                    hot.add(name)
+    return hot
+
+
+# ── Group standings and knockout advancement ──────────────────────────────────
+
+def compute_group_standings(
+    results: "pd.DataFrame | None", groups: pd.DataFrame
+) -> dict:
+    """
+    Parse actual match results into a per-team group standings dict.
+
+    Returns {team → {pts, gd, gf, ga, played}}.
+    Only counts matches where both scores are known (played matches).
+    """
+    all_teams = groups["team"].astype(str).str.strip().tolist()
+    standings: dict = {
+        t: {"pts": 0, "gd": 0, "gf": 0, "ga": 0, "played": 0} for t in all_teams
+    }
+
+    if results is None or (hasattr(results, "empty") and results.empty):
+        return standings
+
+    for _, row in results.iterrows():
+        home  = str(row.get("home_team", "")).strip()
+        away  = str(row.get("away_team", "")).strip()
+        hs_r  = str(row.get("home_score", "")).strip()
+        as_r  = str(row.get("away_score", "")).strip()
+        if not hs_r or hs_r in ("", "nan") or not as_r or as_r in ("", "nan"):
+            continue
+        try:
+            hs, as_ = int(float(hs_r)), int(float(as_r))
+        except (ValueError, TypeError):
+            continue
+
+        for team, gf, ga in [(home, hs, as_), (away, as_, hs)]:
+            if team not in standings:
+                continue
+            standings[team]["gf"]     += gf
+            standings[team]["ga"]     += ga
+            standings[team]["gd"]     += gf - ga
+            standings[team]["played"] += 1
+            if gf > ga:
+                standings[team]["pts"] += 3
+            elif gf == ga:
+                standings[team]["pts"] += 1
+
+    return standings
+
+
+def compute_advance_probability(
+    team: str,
+    standings: "dict | None",
+    groups: pd.DataFrame,
+) -> float:
+    """
+    Estimate the probability that a team advances from the group stage.
+
+    WC 2026 format: top 2 from each of 12 groups advance automatically (24 teams);
+    the best 8 third-place teams also advance (total 32 in R32).
+
+    Returns a float in [0.0, 1.0]:
+      1.0 = already qualified (top-2 after matchday 3)
+      0.0 = already eliminated (4th place after matchday 3)
+      in-between = estimated probability during group stage
+
+    Used to prioritise long-lived players in transfer decisions and to flag
+    high-risk squad players before the group stage ends.
+    """
+    if standings is None:
+        return 0.5
+
+    grp_row = groups[groups["team"].astype(str).str.strip() == team.strip()]
+    if grp_row.empty:
+        return 0.5
+    team_group = str(grp_row.iloc[0]["group"]).strip()
+    group_teams = (
+        groups[groups["group"].astype(str).str.strip() == team_group]["team"]
+        .astype(str).str.strip().tolist()
+    )
+
+    team_data = standings.get(team, {"pts": 0, "gd": 0, "gf": 0, "played": 0})
+    pts    = int(team_data.get("pts", 0))
+    played = int(team_data.get("played", 0))
+
+    if played == 0:
+        # No results yet — FIFA ranking is the prior estimate.
+        # Linear calibration: rank 1→94%, rank 10→87%, rank 25→72%, rank 50→47%, rank 80→17%.
+        # WC draw is seeded so top teams rarely face each other in groups, which is why
+        # even rank 10 teams have a high probability of finishing top 2 in their group.
+        try:
+            rank = float(grp_row.iloc[0]["fifa_ranking"])
+        except (ValueError, TypeError, KeyError):
+            rank = 50.0
+        return round(min(0.94, max(0.15, 0.97 - rank * 0.010)), 3)
+
+    # For 1-2 games played, blend the rank-based prior with the result signal.
+    # A win by Spain means more than a win by Haiti; rank stays relevant.
+    try:
+        rank = float(grp_row.iloc[0]["fifa_ranking"])
+    except (ValueError, TypeError, KeyError):
+        rank = 50.0
+    rank_prior = min(0.94, max(0.15, 0.97 - rank * 0.010))
+
+    if played == 1:
+        result_signal = {3: 0.76, 1: 0.56, 0: 0.34}.get(pts, 0.50)
+        return round(0.40 * rank_prior + 0.60 * result_signal, 3)
+
+    if played == 2:
+        result_signal = {6: 0.97, 4: 0.85, 3: 0.70, 2: 0.48, 1: 0.28, 0: 0.05}.get(pts, 0.50)
+        return round(0.25 * rank_prior + 0.75 * result_signal, 3)
+
+    # Matchday 3 completed — group standing is final
+    group_data = {t: standings.get(t, {"pts": 0, "gd": 0, "gf": 0}) for t in group_teams}
+    sorted_teams = sorted(
+        group_data.keys(),
+        key=lambda t: (
+            group_data[t].get("pts", 0),
+            group_data[t].get("gd", 0),
+            group_data[t].get("gf", 0),
+        ),
+        reverse=True,
+    )
+    try:
+        position = sorted_teams.index(team) + 1
+    except ValueError:
+        return 0.5
+
+    if position <= 2:
+        return 1.0  # automatically qualified
+
+    if position == 3:
+        # 8 of 12 third-place teams advance — likelihood depends on total points
+        if pts >= 6: return 0.90
+        if pts >= 5: return 0.72
+        if pts >= 4: return 0.55
+        if pts >= 3: return 0.38
+        if pts >= 2: return 0.20
+        return 0.05
+
+    return 0.0  # 4th place — eliminated
 
 
 # ── Single-day scoring helper ─────────────────────────────────────────────────
@@ -298,6 +591,7 @@ def _score_for_date(
     form: "pd.DataFrame | None" = None,
     actual_stats: "dict | None" = None,
     form_stats: "dict | None" = None,
+    recent_form: "set | None" = None,
 ) -> float:
     """
     Expected points for a player on one specific calendar day.
@@ -312,7 +606,10 @@ def _score_for_date(
     ]
     if team_fx.empty:
         return 0.0
-    return expected_matchday_points(player, team_fx, groups, next_n=1, form=form, actual_stats=actual_stats, form_stats=form_stats)
+    return expected_matchday_points(
+        player, team_fx, groups, next_n=1,
+        form=form, actual_stats=actual_stats, form_stats=form_stats, recent_form=recent_form,
+    )
 
 
 # ── Expected points estimation ─────────────────────────────────────────────────
@@ -325,6 +622,7 @@ def expected_matchday_points(
     form: "pd.DataFrame | None" = None,
     actual_stats: "dict | None" = None,
     form_stats: "dict | None" = None,
+    recent_form: "set | None" = None,
 ) -> float:
     """
     Estimate expected Futispörssi points per game over the next N fixtures.
@@ -375,10 +673,14 @@ def expected_matchday_points(
     has_sp_role  = spr not in ("no", "none", "")
 
     # Base goal rate; apply 30% penalty for likely defensive midfielders
-    # (no set-piece role and not a penalty taker → probably a DM/CM without goal threat)
     base_goal_rate = BASE_GOAL_RATE.get(pos, 0.08)
     if pos == "MID" and not has_sp_role and not is_pen_taker:
         base_goal_rate *= 0.70
+
+    # Base assist rate — independent of goal rate; MIDs are playmakers, FWDs are finishers
+    base_assist_rate = BASE_ASSIST_RATE.get(pos, 0.06)
+    if pos == "MID" and not has_sp_role and not is_pen_taker:
+        base_assist_rate *= 0.60  # defensive MIDs set up fewer chances
 
     # Team attack strength from qualifying form (neutral = 1.0)
     attack_factor = get_team_attack_rate(team, form)
@@ -413,7 +715,6 @@ def expected_matchday_points(
         # Player goal rate: blend base rate with actual goals/game for this player
         pnorm = _norm(str(player.get("name", "")))
         p_goals = actual_stats.get("player_goals", {}).get(pnorm, 0)  # type: ignore[union-attr]
-        # Also try last-name-only (goalscorer data is often surname-only)
         if p_goals == 0:
             p_parts = pnorm.split()
             if p_parts:
@@ -422,13 +723,45 @@ def expected_matchday_points(
             actual_player_gpg = p_goals / _actual_games
             base_goal_rate = base_goal_rate * (1 - _blend) + actual_player_gpg * _blend
 
+        # Player assist rate: blend base rate with actual assists/game
+        p_assists = actual_stats.get("player_assists", {}).get(pnorm, 0)  # type: ignore[union-attr]
+        if p_assists == 0:
+            p_parts = pnorm.split()
+            if p_parts:
+                p_assists = actual_stats.get("player_assists", {}).get(p_parts[0], 0)  # type: ignore[union-attr]
+        if p_assists > 0:
+            actual_player_apg = p_assists / _actual_games
+            base_assist_rate = base_assist_rate * (1 - _blend) + actual_player_apg * _blend
+
+    # Hot-streak bonus: ×1.15 on attack rates for players who scored/assisted in
+    # the most recent completed match days.  Mild boost — actual_stats blending
+    # takes over as the tournament progresses.
+    if recent_form:
+        pnorm = _norm(str(player.get("name", "")))
+        p_parts = pnorm.split()
+        last_name = p_parts[0] if p_parts else ""
+        # Goalscorer strings use "LastName Initial." (e.g. "quinones j."), so we
+        # match by checking if any hot-streak entry starts with the player's last name.
+        in_hot_streak = (
+            pnorm in recent_form or
+            (last_name and any(rf.startswith(last_name) for rf in recent_form))
+        )
+        if in_hot_streak:
+            base_goal_rate   *= 1.15
+            base_assist_rate *= 1.15
+
     # ── Per-fixture loop ──────────────────────────────────────────────────────
     total_pts = 0.0
     for _, row in team_fx.iterrows():
         opp = row["away_team"] if str(row["home_team"]).strip() == team else row["home_team"]
         team_rank = get_team_ranking(team, groups)
         opp_rank  = get_team_ranking(str(opp).strip(), groups)
-        win_p, draw_p, loss_p = _result_probs(team_rank, opp_rank)
+
+        # Host nation home advantage: USA, Canada, and Mexico play in front of
+        # home crowds throughout WC 2026.  Treat them as HOME_RANK_BOOST FIFA
+        # spots stronger when computing result probabilities.
+        team_rank_eff = max(1.0, team_rank - HOME_RANK_BOOST) if team in HOST_NATIONS else team_rank
+        win_p, draw_p, loss_p = _result_probs(team_rank_eff, opp_rank)
 
         # Knockout fixtures: tighter games → higher CS, fewer goals scored
         stage = str(row.get("stage", "")).strip().lower()
@@ -460,9 +793,18 @@ def expected_matchday_points(
 
         pts += cs_prob * pp["clean_sheet"]
 
-        # GK saves (flat estimate based on typical WC save counts)
+        # GK saves — scale with how dangerous the opponent is.
+        # A GK facing Brazil faces ~9 SoT; one facing Panama faces ~2.
+        # We subtract expected goals conceded to get expected saves, then
+        # map to the save-tier point bands using Poisson expectation.
         if pos == "GK":
-            pts += 1.5
+            # Square-root scaling: rank 5 (Brazil) is dangerous but not 10× rank 50.
+            # sqrt(50/rank) gives: rank5→3.16, rank20→1.58, rank50→1.0, rank100→0.71
+            opp_attack_threat = min(1.8, max(0.4, (50.0 / max(opp_rank, 1)) ** 0.5))
+            exp_sot_against = AVG_SOT_AGAINST * opp_attack_threat
+            exp_ga_gk = loss_p * 2.0 + draw_p * 0.5
+            exp_saves = max(0.3, exp_sot_against - exp_ga_gk)
+            pts += _expected_tier_pts(exp_saves)
 
         # DEF goals-against penalty
         if pos == "DEF":
@@ -485,13 +827,23 @@ def expected_matchday_points(
         if spr in ("both", "corners"):
             pts += 0.2 * pp["assist"]
 
-        # Goal/assist contribution: base rate × opponent weakness × team attack
+        # Goal/assist contribution — separate rates, both scaled by fixture context
         opp_factor = _opp_goal_factor(opp_rank)
         if is_knockout:
-            opp_factor *= 0.85  # fewer goals in knockout games
-        exp_goals = base_goal_rate * opp_factor * attack_factor
-        pts += exp_goals * pp["goal"]
-        pts += exp_goals * ASSIST_PER_GOAL * pp["assist"]
+            opp_factor *= 0.85
+        exp_goals   = base_goal_rate   * opp_factor * attack_factor
+        exp_assists = base_assist_rate * opp_factor * attack_factor
+        pts += exp_goals   * pp["goal"]
+        pts += exp_assists * pp["assist"]
+
+        # Shots-on-target bonus for outfield players.
+        # Every shot a player takes that's on target scores points even if saved.
+        # Expected SoT = exp_goals / conversion_rate (goals are a subset of SoT).
+        if pos in ("FWD", "MID", "DEF"):
+            conversion = SHOT_CONVERSION.get(pos, 0.12)
+            if conversion > 0:
+                exp_sot = exp_goals / conversion
+                pts += _expected_tier_pts(exp_sot)
 
         total_pts += pts
 
@@ -548,6 +900,7 @@ def recommend_best_squad(
     form: "pd.DataFrame | None" = None,
     actual_stats: "dict | None" = None,
     form_stats: "dict | None" = None,
+    recent_form: "set | None" = None,
 ) -> dict | None:
     """
     Returns the optimal 11-player squad within budget.
@@ -568,7 +921,7 @@ def recommend_best_squad(
     # Keep only players matched to a lineup entry — non-starters are irrelevant
     enriched = enriched[enriched["team"].astype(str).str.strip() != ""].copy()
     enriched["exp_pts"] = enriched.apply(
-        lambda r: expected_matchday_points(r, fixtures, groups, form=form, actual_stats=actual_stats, form_stats=form_stats), axis=1
+        lambda r: expected_matchday_points(r, fixtures, groups, form=form, actual_stats=actual_stats, form_stats=form_stats, recent_form=recent_form), axis=1
     )
 
     best: dict | None = None
@@ -607,28 +960,81 @@ def load_user_squad(
     form: "pd.DataFrame | None" = None,
     actual_stats: "dict | None" = None,
     form_stats: "dict | None" = None,
+    today_str: str = "",
+    recent_form: "set | None" = None,
 ) -> dict | None:
     """
     Build a squad dict (same shape as recommend_best_squad result) from players
     where in_squad == 'True'.  Returns None if fewer than 11 players are flagged.
+
+    Captain is picked for TODAY: the squad player playing today with the highest
+    expected points for that specific game.  Falls back to next game day if no
+    squad player has a fixture today.
     """
-    # in_squad is stored as string 'True'/'False' by load_csv
+    import datetime as _dt
+
     mask = players["in_squad"].astype(str).str.strip().str.lower() == "true"
     user_players = players[mask].copy()
     if len(user_players) < 11:
         return None
 
+    try:
+        today = _dt.date.fromisoformat(today_str) if today_str else _dt.date.today()
+    except ValueError:
+        today = _dt.date.today()
+
     enriched_all = _enrich_with_team(players, lineups)
     user_enriched = enriched_all[mask].copy()
+
+    # Overall expected pts (avg over next few games) — for display on cards
     user_enriched["exp_pts"] = user_enriched.apply(
         lambda r: expected_matchday_points(
-            r, fixtures, groups, form=form, actual_stats=actual_stats, form_stats=form_stats
+            r, fixtures, groups, form=form, actual_stats=actual_stats, form_stats=form_stats, recent_form=recent_form,
+        ),
+        axis=1,
+    )
+
+    # Today's expected pts — for captain selection
+    today_iso = today.isoformat()
+    today_fx = (
+        fixtures[fixtures["date"].astype(str).str.strip() == today_iso]
+        if not fixtures.empty else pd.DataFrame()
+    )
+    user_enriched["today_pts"] = user_enriched.apply(
+        lambda r: _score_for_date(
+            r, today_fx, groups, form=form, actual_stats=actual_stats, form_stats=form_stats, recent_form=recent_form,
         ),
         axis=1,
     )
 
     squad = user_enriched.reset_index(drop=True)
-    cap_idx = squad["exp_pts"].idxmax()
+
+    # Captain: pick the player playing TODAY with the highest today_pts.
+    # If nobody plays today, look ahead day-by-day until we find a game day.
+    cap_idx = None
+    playing_today = squad[squad["today_pts"] > 0]
+    if not playing_today.empty:
+        cap_idx = playing_today["today_pts"].idxmax()
+        cap_pts_val = float(squad.loc[cap_idx, "today_pts"]) * CAPTAIN_MULTIPLIER
+    else:
+        # Look ahead up to 7 days for the next game day any squad player plays
+        for ahead in range(1, 8):
+            next_date = (today + _dt.timedelta(days=ahead)).isoformat()
+            nxt_fx = fixtures[fixtures["date"].astype(str).str.strip() == next_date] if not fixtures.empty else pd.DataFrame()
+            next_pts = squad.apply(
+                lambda r: _score_for_date(r, nxt_fx, groups, form=form, actual_stats=actual_stats, form_stats=form_stats, recent_form=recent_form),
+                axis=1,
+            )
+            if next_pts.max() > 0:
+                cap_idx = next_pts.idxmax()
+                cap_pts_val = float(next_pts[cap_idx]) * CAPTAIN_MULTIPLIER
+                break
+
+    if cap_idx is None:
+        # Ultimate fallback: highest overall exp_pts
+        cap_idx = squad["exp_pts"].idxmax()
+        cap_pts_val = float(squad.loc[cap_idx, "exp_pts"]) * CAPTAIN_MULTIPLIER
+
     cap_row = squad.loc[cap_idx]
     n_def = int((squad["position"].str.upper() == "DEF").sum())
     n_mid = int((squad["position"].str.upper() == "MID").sum())
@@ -641,7 +1047,7 @@ def load_user_squad(
         "total_pts": round(float(squad["exp_pts"].sum()), 1),
         "budget_used": int(squad["value"].apply(parse_value).sum()),
         "captain": cap_row["name"],
-        "captain_pts": round(float(cap_row["exp_pts"]) * CAPTAIN_MULTIPLIER, 1),
+        "captain_pts": round(cap_pts_val, 1),
         "enriched_players": enriched_all,
         "is_user_squad": True,
     }
@@ -694,11 +1100,15 @@ def recommend_transfers(
     form: "pd.DataFrame | None" = None,
     actual_stats: "dict | None" = None,
     form_stats: "dict | None" = None,
+    today_str: str = "",
+    recent_form: "set | None" = None,
 ) -> dict:
     """
     Given current squad, suggest transfers in and out.
     Returns {"out": [...], "in": [...]}
     """
+    import datetime as _dt
+
     if squad_df.empty or all_players.empty:
         return {"out": [], "in": []}
 
@@ -711,23 +1121,76 @@ def recommend_transfers(
     else:
         squad_pos = squad_df.copy()
 
+    # Available players: rank by NEXT SINGLE FIXTURE only.
+    # The Explorer answers "who is best to buy RIGHT NOW?" — future games should not
+    # inflate players whose immediate fixture is tough (e.g., Egypt vs Belgium).
     if "exp_pts" not in available.columns:
         available["exp_pts"] = available.apply(
-            lambda r: expected_matchday_points(r, fixtures, groups, form=form, actual_stats=actual_stats, form_stats=form_stats), axis=1
+            lambda r: expected_matchday_points(r, fixtures, groups, next_n=1, form=form, actual_stats=actual_stats, form_stats=form_stats, recent_form=recent_form), axis=1
         )
+    # Squad: keep next_n=3 for sell-ranking — you care about a player's full upcoming
+    # schedule when deciding whether to move them on.
     if "exp_pts" not in squad_pos.columns:
         squad_pos["exp_pts"] = squad_pos.apply(
-            lambda r: expected_matchday_points(r, fixtures, groups, form=form, actual_stats=actual_stats, form_stats=form_stats), axis=1
+            lambda r: expected_matchday_points(r, fixtures, groups, next_n=3, form=form, actual_stats=actual_stats, form_stats=form_stats, recent_form=recent_form), axis=1
         )
+
+    # Soft protection: players whose team plays within the next 2 days get a bonus
+    # equal to their expected near-game pts added to their effective score. This makes
+    # them appear less attractive as sell targets — without hard-blocking them in case
+    # the gain on the other side is very large.
+    squad_pos = squad_pos.copy()
+    near_bonus: dict[str, float] = {}
+    try:
+        today_d = _dt.date.fromisoformat(today_str) if today_str else _dt.date.today()
+        for offset in range(3):  # today + 0, 1, 2 days ahead
+            check_str = (today_d + _dt.timedelta(days=offset)).isoformat()
+            day_fx_near = fixtures[fixtures["date"].astype(str).str.strip() == check_str]
+            if day_fx_near.empty:
+                continue
+            for _, row in squad_pos.iterrows():
+                name = str(row.get("name", ""))
+                if name in near_bonus:
+                    continue
+                near_pts = _score_for_date(row, day_fx_near, groups, form, actual_stats=actual_stats, form_stats=form_stats, recent_form=recent_form)
+                if near_pts > 0:
+                    near_bonus[name] = near_pts
+    except (ValueError, TypeError):
+        pass
+
+    squad_pos["_protected_pts"] = squad_pos.apply(
+        lambda r: float(r.get("exp_pts", 0)) + near_bonus.get(str(r.get("name", "")), 0.0),
+        axis=1,
+    )
+    worst_out = squad_pos.nsmallest(n_suggestions, "_protected_pts")
 
     # Budget constraint: in-player must fit within cap after selling the weakest out-player.
     budget_used = squad_budget_used(squad_df)
-    worst_out   = squad_pos.nsmallest(n_suggestions, "exp_pts")
     min_out_val = worst_out["value"].apply(parse_value).min() if not worst_out.empty else 0
     budget_slack = BUDGET - budget_used + min_out_val
     affordable = available[available["value"].apply(parse_value) <= budget_slack]
 
     top_in = affordable.nlargest(n_suggestions, "exp_pts")
+
+    _today_iso = today_str or import_dt.date.today().isoformat() if (import_dt := __import__("datetime")) else ""
+
+    def _next_game(team: str) -> tuple[str, str]:
+        """(date, opponent) for the team's next upcoming fixture."""
+        if not team:
+            return "", ""
+        _t = today_str or __import__("datetime").date.today().isoformat()
+        up = fixtures[
+            ((fixtures["home_team"].astype(str).str.strip() == team) |
+             (fixtures["away_team"].astype(str).str.strip() == team)) &
+            (fixtures["date"].astype(str).str.strip() >= _t)
+        ].sort_values("date")
+        if up.empty:
+            return "", ""
+        fx = up.iloc[0]
+        opp = (str(fx["away_team"]).strip()
+               if str(fx["home_team"]).strip() == team
+               else str(fx["home_team"]).strip())
+        return str(fx["date"]).strip(), opp
 
     def row_to_dict(row):
         pt  = str(row.get("penalty_taker", "")).lower()
@@ -738,17 +1201,20 @@ def recommend_transfers(
         if spr not in ("no", "none", ""):
             reasons.append(f"Set pieces: {spr}")
         team = str(row.get("team", ""))
+        next_date, next_opp = _next_game(team)
         if team:
             diff = fixture_difficulty(team, fixtures, groups)
             label, _ = difficulty_label(diff)
-            reasons.append(f"{label} fixtures (avg rank {diff:.0f})")
+            reasons.append(f"{label} upcoming fixtures (avg rank {diff:.0f})")
         return {
-            "name":     row.get("name", ""),
-            "position": str(row.get("position", "")).upper(),
-            "value":    row.get("value", "?"),
-            "exp_pts":  round(float(row.get("exp_pts", 0)), 1),
-            "team":     team,
-            "reason":   "  ·  ".join(reasons) if reasons else "—",
+            "name":      row.get("name", ""),
+            "position":  str(row.get("position", "")).upper(),
+            "value":     row.get("value", "?"),
+            "exp_pts":   round(float(row.get("exp_pts", 0)), 1),
+            "team":      team,
+            "next_date": next_date,
+            "next_opp":  next_opp,
+            "reason":    "  ·  ".join(reasons) if reasons else "—",
         }
 
     return {
@@ -822,6 +1288,8 @@ def get_transfer_schedule(
     form: "pd.DataFrame | None" = None,
     actual_stats: "dict | None" = None,
     form_stats: "dict | None" = None,
+    recent_form: "set | None" = None,
+    advance_probs: "dict | None" = None,
 ) -> list[dict]:  # noqa: C901
     """
     Returns one entry per matchday ROUND (not per day).
@@ -926,9 +1394,24 @@ def get_transfer_schedule(
     if "exp_pts" not in all_players.columns:
         all_players = all_players.copy()
         all_players["exp_pts"] = all_players.apply(
-            lambda r: expected_matchday_points(r, fixtures, groups, next_n=3, form=form, actual_stats=actual_stats, form_stats=form_stats), axis=1
+            lambda r: expected_matchday_points(r, fixtures, groups, next_n=3, form=form, actual_stats=actual_stats, form_stats=form_stats, recent_form=recent_form), axis=1
         )
     sq_names = set(squad_df["name"].astype(str).str.strip())
+    budget_used = squad_budget_used(squad_df)
+
+    # Transfer gain threshold scales with budget pressure.
+    # Comfortable (>1.5 per round) → require 2 pts gain; tight (<1.0) → require 4 pts.
+    total_future_rounds = sum(
+        1 for k in rounds
+        if min(rounds[k]["dates_games"].keys()) >= today.isoformat()
+    )
+    transfer_rate = transfers_remaining / max(total_future_rounds, 1)
+    if transfer_rate < 1.0:
+        min_gain_threshold = 4.0
+    elif transfer_rate < 1.5:
+        min_gain_threshold = 3.0
+    else:
+        min_gain_threshold = 2.0
 
     # Lower number = transfer out first (strategy: FWD/MID upgrades > DEF > GK)
     _POS_PRIORITY = {"FWD": 0, "MID": 1, "DEF": 2, "GK": 3}
@@ -954,13 +1437,13 @@ def get_transfer_schedule(
             continue
 
         if days_to_start <= 0:
-            urgency = "🔴 In progress"
+            urgency = "In progress"
         elif days_to_start <= 2:
-            urgency = "🟠 Starts soon"
+            urgency = "Starts soon"
         elif days_to_start <= 6:
-            urgency = "🟡 This week"
+            urgency = "This week"
         else:
-            urgency = "🟢 Upcoming"
+            urgency = "Upcoming"
 
         # ── Day-specific transfer opportunities ───────────────────────────────
         # For each future day in this round:
@@ -970,147 +1453,214 @@ def get_transfer_schedule(
         #   4. Compare in-player's day_pts vs out-player's day_pts (0 if they don't play)
         # Never transfer out a player who plays the same day as the in-player.
 
-        sq = squad_df.copy()
-
         # Identify coverage gaps: days in this round where no squad player has a game
         uncovered_days: list[str] = []
         for d_str in sorted_dates:
             try:
-                d_date_obj = datetime.date.fromisoformat(d_str)
+                datetime.date.fromisoformat(d_str)
             except ValueError:
                 continue
-            day_fx = unplayed[unplayed["date"].astype(str).str.strip() == d_str]
-            teams_today = set()
-            for _, fx in day_fx.iterrows():
-                teams_today.add(str(fx.get("home_team", "")).strip())
-                teams_today.add(str(fx.get("away_team", "")).strip())
-            if not sq["team"].astype(str).str.strip().isin(teams_today).any():
+            day_fx_chk = unplayed[unplayed["date"].astype(str).str.strip() == d_str]
+            teams_chk: set[str] = set()
+            for _, fx in day_fx_chk.iterrows():
+                teams_chk.add(str(fx.get("home_team", "")).strip())
+                teams_chk.add(str(fx.get("away_team", "")).strip())
+            if not squad_df["team"].astype(str).str.strip().isin(teams_chk).any():
                 uncovered_days.append(d_str)
 
-        # Collect all day-specific opportunities (one candidate per day per position)
-        opportunities: list[dict] = []
-        for d_str in sorted_dates:
+        # Greedy sequential swap collection.
+        # Process coverage-gap days first (most urgent), then remaining days chronologically.
+        # Each accepted swap updates running budget + squad membership so chain effects
+        # (transfer X freeing budget for transfer Y) are modeled correctly.
+        running_budget = int(budget_used)
+        running_sq_names = sq_names.copy()
+        seen_out_r: set[str] = set()
+        seen_in_r:  set[str] = set()
+        swaps: list[dict] = []
+
+        gap_days     = [d for d in sorted_dates if d in uncovered_days]
+        non_gap_days = [d for d in sorted_dates if d not in uncovered_days]
+        ordered_days = gap_days + non_gap_days  # gaps processed first
+
+        for d_str in ordered_days:
+            if len(swaps) >= max(3, per_round):
+                break
             try:
                 d_date_obj = datetime.date.fromisoformat(d_str)
             except ValueError:
                 continue
             days_until = (d_date_obj - today).days
             if days_until < 0:
-                continue  # already played
+                continue
 
             day_fx = unplayed[unplayed["date"].astype(str).str.strip() == d_str]
             if day_fx.empty:
                 continue
 
-            teams_today: set[str] = set()
+            teams_today_r: set[str] = set()
             for _, fx in day_fx.iterrows():
-                teams_today.add(str(fx.get("home_team", "")).strip())
-                teams_today.add(str(fx.get("away_team", "")).strip())
+                teams_today_r.add(str(fx.get("home_team", "")).strip())
+                teams_today_r.add(str(fx.get("away_team", "")).strip())
 
-            # Squad split: playing today vs not
-            sq_playing = sq[sq["team"].astype(str).str.strip().isin(teams_today)]
-            sq_not_playing = sq[~sq["team"].astype(str).str.strip().isin(teams_today)]
+            # Use running squad state (reflects prior accepted swaps this round)
+            sq_current = squad_df[squad_df["name"].astype(str).str.strip().isin(running_sq_names)]
+            sq_not_playing = sq_current[~sq_current["team"].astype(str).str.strip().isin(teams_today_r)]
 
             if sq_not_playing.empty:
-                # Every squad player already plays today — don't break coverage to swap
-                continue
+                continue  # everyone plays today — don't break coverage
 
-            # Available players playing today (not in squad)
+            # Available players playing today (not already in running squad, not already lined up)
             avail_today = all_players[
-                all_players["team"].astype(str).str.strip().isin(teams_today) &
-                ~all_players["name"].astype(str).str.strip().isin(sq_names)
+                all_players["team"].astype(str).str.strip().isin(teams_today_r) &
+                ~all_players["name"].astype(str).str.strip().isin(running_sq_names) &
+                ~all_players["name"].astype(str).str.strip().isin(seen_in_r)
             ].copy()
             if avail_today.empty:
                 continue
 
-            # Score them for this specific day
             avail_today["day_pts"] = avail_today.apply(
-                lambda r: _score_for_date(r, day_fx, groups, form, actual_stats=actual_stats, form_stats=form_stats), axis=1
+                lambda r: _score_for_date(r, day_fx, groups, form, actual_stats=actual_stats, form_stats=form_stats, recent_form=recent_form), axis=1
             )
             avail_today = avail_today[avail_today["day_pts"] > 1.5]
             if avail_today.empty:
                 continue
 
-            # Per-position: find the best upgrade
+            is_gap = d_str in uncovered_days
+
             for pos in ["FWD", "MID", "DEF", "GK"]:
-                in_cands = avail_today[avail_today["position"].str.upper() == pos]
-                # Only transfer out a player who does NOT play that day
-                out_cands = sq_not_playing[sq_not_playing["position"].str.upper() == pos]
+                if len(swaps) >= max(3, per_round):
+                    break
+
+                in_cands  = avail_today[avail_today["position"].str.upper() == pos]
+                out_cands = sq_not_playing[
+                    (sq_not_playing["position"].str.upper() == pos) &
+                    ~sq_not_playing["name"].astype(str).str.strip().isin(seen_out_r)
+                ]
 
                 if in_cands.empty or out_cands.empty:
                     continue
 
-                # Worst squad player of the same position not playing today
-                # Pick out-player first so we know the budget freed up.
+                # Sell-score: combines low exp_pts + hard upcoming fixtures +
+                # low advance probability (player from likely-eliminated team = sell first).
                 if "exp_pts" not in out_cands.columns:
                     out_cands = out_cands.copy()
                     out_cands["exp_pts"] = out_cands.apply(
-                        lambda r: expected_matchday_points(r, fixtures, groups, form=form, actual_stats=actual_stats, form_stats=form_stats), axis=1
+                        lambda r: expected_matchday_points(r, fixtures, groups, form=form, actual_stats=actual_stats, form_stats=form_stats, recent_form=recent_form), axis=1
                     )
-                worst_out = out_cands.nsmallest(1, "exp_pts").iloc[0]
+                out_cands = out_cands.copy()
+                out_cands["sell_score"] = out_cands.apply(
+                    lambda r: (
+                        -float(r.get("exp_pts", 0))
+                        + max(0.0, (50.0 - fixture_difficulty(str(r.get("team", "")), fixtures, groups, next_n=2)) / 50.0) * 2.0
+                        + max(0.0, 1.0 - (advance_probs or {}).get(str(r.get("team", "")), 0.5)) * 3.0
+                    ),
+                    axis=1,
+                )
+                worst_out = out_cands.nlargest(1, "sell_score").iloc[0]
 
-                # Budget: selling worst_out frees their value; in-player must fit within cap.
-                out_val_budget = parse_value(worst_out.get("value", 0))
-                budget_slack = BUDGET - budget_used + out_val_budget
-                in_cands_affordable = in_cands[in_cands["value"].apply(parse_value) <= budget_slack]
-                if in_cands_affordable.empty:
+                out_val_freed = parse_value(worst_out.get("value", 0))
+                budget_slack_r = BUDGET - running_budget + out_val_freed
+                in_cands_ok = in_cands[in_cands["value"].apply(parse_value) <= budget_slack_r]
+                if in_cands_ok.empty:
                     continue
 
-                # Best affordable available player for today
-                best_in = in_cands_affordable.nlargest(1, "day_pts").iloc[0]
-
+                best_in = in_cands_ok.nlargest(1, "day_pts").iloc[0]
                 day_pts_in = float(best_in["day_pts"])
-                # Out-player scores 0 today (they don't play); we compare day gain vs their avg
-                out_avg = float(worst_out.get("exp_pts", 0))
-                gain = round(day_pts_in - out_avg, 1)  # net pts/game value change
 
-                if day_pts_in < 2.0:
+                # Deferred-buy check: if the IN player has a significantly better fixture
+                # within 8 days, skip this date — the schedule will surface them for
+                # that better window instead.  Don't waste a transfer slot on an Egypt FWD
+                # vs Belgium (2.9 pts) when they play New Zealand in 6 days (5.4 pts).
+                # Gap days always proceed — any coverage beats a gap.
+                if not is_gap:
+                    _in_team = str(best_in.get("team", "")).strip()
+                    _deferred = False
+                    for _fut_d in sorted(unplayed["date"].astype(str).str.strip().unique()):
+                        if _fut_d <= d_str:
+                            continue
+                        try:
+                            _fut_obj = datetime.date.fromisoformat(_fut_d)
+                        except ValueError:
+                            continue
+                        if (_fut_obj - d_date_obj).days > 8:
+                            break
+                        _fut_fx = unplayed[unplayed["date"].astype(str).str.strip() == _fut_d]
+                        _fut_teams = (
+                            set(_fut_fx["home_team"].astype(str).str.strip()) |
+                            set(_fut_fx["away_team"].astype(str).str.strip())
+                        )
+                        if _in_team not in _fut_teams:
+                            continue
+                        _fut_pts = _score_for_date(
+                            best_in, _fut_fx, groups, form,
+                            actual_stats=actual_stats, form_stats=form_stats, recent_form=recent_form,
+                        )
+                        if _fut_pts > day_pts_in * 1.5:
+                            _deferred = True
+                            break
+                    if _deferred:
+                        continue
+
+                # Gain = in-player's pts today vs out-player's pts today (they don't play → 0).
+                # Apply threshold that scales with how many transfers we have left.
+                # Gap days bypass the threshold (any coverage is better than none).
+                if day_pts_in < min_gain_threshold and not is_gap:
                     continue
+
+                out_avg = float(worst_out.get("exp_pts", 0))
+                pts_gain = round(day_pts_in - out_avg, 1)  # quality delta for display
 
                 in_val  = parse_value(best_in.get("value", 0))
-                out_val = parse_value(worst_out.get("value", 0))
-                value_note = (
-                    f"  ·  ↑ {in_val/1000:.0f}k" if in_val > out_val + 50_000 else ""
-                )
+                out_val_disp = parse_value(worst_out.get("value", 0))
+                value_note = f"  ·  ↑ {in_val/1000:.0f}k" if in_val > out_val_disp + 50_000 else ""
 
-                is_gap = d_str in uncovered_days
+                # "Buy back later" — check whether out-player's fixtures improve
+                # significantly in the second half of the tournament.
+                out_team_str  = str(worst_out.get("team", "")).strip()
+                in_team_str   = str(best_in.get("team", ""))
+                near_diff     = fixture_difficulty(out_team_str, fixtures, groups, next_n=2)
+                late_diff     = fixture_difficulty(out_team_str, fixtures, groups, next_n=6)
+                can_buy_back  = bool(late_diff > near_diff + 15)
 
-                # Only suggest if in-player's day pts beats out-player's average.
-                # Exception: always suggest for coverage-gap days (no squad player plays)
-                # because gaining any pts > giving up 0 for that day.
-                if gain <= 0 and not is_gap:
-                    continue
+                # Advance probability for the in-player — warn if their team may not advance
+                in_adv  = (advance_probs or {}).get(in_team_str, 0.5)
+                out_adv = (advance_probs or {}).get(out_team_str, 0.5)
+                adv_note = ""
+                if in_adv < 0.40:
+                    adv_note = f"  ·  ⚠ {in_team_str} advance prob {in_adv:.0%}"
+                elif out_adv < 0.40 and out_adv > 0.0:
+                    adv_note = f"  ·  sell: {out_team_str} advance prob only {out_adv:.0%}"
 
-                opportunities.append({
+                swap = {
                     "transfer_date":  d_str,
                     "days_until":     days_until,
                     "out":            display_name(str(worst_out["name"])),
-                    "out_team":       str(worst_out.get("team", "")),
+                    "out_team":       out_team_str,
                     "in":             display_name(str(best_in["name"])),
-                    "in_team":        str(best_in.get("team", "")),
+                    "in_team":        in_team_str,
                     "position":       pos,
                     "day_pts":        round(day_pts_in, 1),
-                    "pts_gain":       gain,
+                    "pts_gain":       pts_gain,
                     "is_gap_day":     is_gap,
+                    "can_buy_back":   can_buy_back,
+                    "in_advance_prob": round(in_adv, 2),
                     "reason":         (
-                        f"Plays {d_str}  ·  ~{day_pts_in:.1f} pts  ·  "
-                        f"out-player avg {out_avg:.1f}{value_note}"
+                        f"Plays {d_str}  ·  ~{day_pts_in:.1f} pts today  ·  "
+                        f"out-player avg {out_avg:.1f}{value_note}{adv_note}"
+                        + ("  ·  Rebuy candidate" if can_buy_back else "")
                     ),
-                })
+                }
 
-        # Sort: coverage-gap days first (uncovered = urgent), then by day_pts descending
-        # Deduplicate out-players — each squad player can only be transferred out once
-        opportunities.sort(key=lambda x: (not x["is_gap_day"], -x["day_pts"], x["transfer_date"]))
-        seen_out: set[str] = set()
-        swaps: list[dict] = []
-        for opp in opportunities:
-            if opp["out"] in seen_out:
-                continue
-            seen_out.add(opp["out"])
-            swaps.append(opp)
-            if len(swaps) >= max(3, per_round):
-                break
-        # Final sort: chronological so the UI shows nearest first
+                swaps.append(swap)
+                seen_out_r.add(str(worst_out["name"]).strip())
+                seen_in_r.add(str(best_in["name"]).strip())
+
+                # Chain update: reflect this swap's budget and squad impact on subsequent iterations
+                running_budget += int(in_val) - int(out_val_freed)
+                running_sq_names.discard(str(worst_out["name"]).strip())
+                running_sq_names.add(str(best_in["name"]).strip())
+
+        # Restore chronological order for the UI (gap days were front-loaded for priority)
         swaps.sort(key=lambda x: x["transfer_date"])
 
         # Day-by-day breakdown with squad markers

@@ -16,24 +16,26 @@ from utils.football_api import (
     APIError,
 )
 from utils.flashscore import sync_flashscore, ScrapeError
-from utils.futisporssi import sync_prices, discover_player_ids, FPScrapeError
+from utils.futisporssi import (
+    sync_prices, discover_player_ids, scan_all_player_ids, FPScrapeError,
+)
 from utils.team_form import (
     fetch_all_teams_form, load_team_form, save_team_form,
     get_form_stats, FORM_COLUMNS,
 )
 
-st.set_page_config(page_title="Live Sync", page_icon="🔗", layout="wide")
-st.title("🔗 Live Data Sync")
+st.set_page_config(page_title="Live Sync", layout="wide")
+st.title("Live Data Sync")
 st.caption(
     "Four data sources — Flashscore for results + lineups, "
     "Futispörssi for live player prices, pre-tournament form, and football-data.org."
 )
 
 tab_fs, tab_prices, tab_form, tab_fdorg = st.tabs([
-    "⚡ Flashscore  (results + lineups, no key)",
-    "💰 Player Prices  (futisporssi.fi)",
-    "📊 Pre-tournament Form  (last 5 matches per team)",
-    "📡 football-data.org  (results only)",
+    "Flashscore  (results + lineups, no key)",
+    "Player Prices  (futisporssi.fi)",
+    "Pre-tournament Form  (last 5 matches per team)",
+    "football-data.org  (results only)",
 ])
 
 
@@ -68,7 +70,7 @@ with tab_fs:
         ),
     )
 
-    if st.button("⚡ Sync from Flashscore", type="primary"):
+    if st.button("Sync from Flashscore", type="primary"):
         existing_results      = load_csv("results.csv")
         existing_lineups      = load_csv("lineups.csv")
         existing_player_stats = load_csv("player_stats.csv")
@@ -107,7 +109,7 @@ with tab_fs:
                 )
 
         if out["errors"]:
-            with st.expander("⚠️ Errors during detail fetch"):
+            with st.expander("Errors during detail fetch"):
                 for e in out["errors"]:
                     st.warning(e)
 
@@ -126,7 +128,7 @@ with tab_fs:
     debug_dir = Path(__file__).parent.parent.parent / "Data" / "debug"
     debug_files = list(debug_dir.glob("fs_detail_*.txt")) if debug_dir.exists() else []
     if debug_files:
-        with st.expander(f"🔍 Raw feed files ({len(debug_files)}) — lineup field-code inspection"):
+        with st.expander(f"Raw feed files ({len(debug_files)}) — lineup field-code inspection"):
             st.caption(
                 "These files contain the raw Flashscore detail feed for completed matches. "
                 "If lineups aren't parsing correctly, share one so the field codes can be "
@@ -242,10 +244,10 @@ with tab_prices:
         "IDs are discovered from public leaderboards — the store grows after each game day."
     )
 
-    col_disc, col_full = st.columns(2)
+    col_disc, col_full, col_scan = st.columns(3)
 
     with col_disc:
-        if st.button("🔍 Discover new player IDs only", help="Fast: scrapes leaderboard + team pages to find new player slugs (~1 min). Does not update prices."):
+        if st.button("Discover new IDs", help="Fast: scrapes leaderboard + 48 team pages for new player slugs (~1 min). Does not update prices."):
             with st.spinner("Scraping team pages for new player IDs…"):
                 try:
                     store = discover_player_ids(delay=0.8)
@@ -253,8 +255,24 @@ with tab_prices:
                 except FPScrapeError as e:
                     st.error(f"Failed: {e}")
 
+    with col_scan:
+        st.caption("Slow (~10 min): scans every futisporssi player ID 1–1150 to find players not listed on team pages (van Dijk, Kimmich, etc.).")
+        if st.button("Full ID scan (1–1150)", help="Scans all numeric IDs. Run once to discover all players."):
+            progress_bar_scan = st.progress(0.0, text="Scanning IDs…")
+
+            def _scan_progress(pid, id_max, _):
+                progress_bar_scan.progress(pid / id_max, text=f"ID {pid}/{id_max}")
+
+            with st.spinner("Scanning all player IDs (this takes ~10 minutes)…"):
+                try:
+                    store = scan_all_player_ids(id_max=1150, delay=0.35, progress_callback=_scan_progress)
+                    progress_bar_scan.progress(1.0, text="Done!")
+                    st.success(f"Scan complete — **{len(store)} player IDs** now in store.")
+                except FPScrapeError as e:
+                    st.error(f"Scan failed: {e}")
+
     with col_full:
-        if st.button("💰 Discover + fetch all prices", type="primary", help="Full sync: discover IDs then fetch price for each (~3–5 min depending on how many players are known)."):
+        if st.button("Sync all prices", type="primary", help="Fetch current price for every known player (~3–5 min). Updates players.csv with new values and change %."):
             players_df = load_csv("players.csv")
             progress_bar = st.progress(0.0, text="Starting…")
             status_text  = st.empty()
@@ -267,9 +285,8 @@ with tab_prices:
             try:
                 result = sync_prices(
                     players_df,
-                    delay=1.0,
-                    discover_new=True,
-                    discover_delay=0.8,
+                    delay=0.5,
+                    discover_new=False,
                     progress_callback=_price_progress,
                 )
             except FPScrapeError as e:
@@ -298,14 +315,23 @@ with tab_prices:
     st.markdown("### Current Player Values")
     _players = load_csv("players.csv")
     _mask = _players["in_squad"].astype(str).str.strip().str.lower() == "true"
-    _squad = _players[_mask][["name", "position", "value"]].copy()
-    if not _squad.empty:
+    _squad_p = _players[_mask].copy()
+    if not _squad_p.empty:
+        _disp_cols = ["name", "position", "value"]
+        if "value_change_pct" in _squad_p.columns:
+            _disp_cols.append("value_change_pct")
         st.markdown("**My Squad**")
-        st.dataframe(_squad, use_container_width=True, hide_index=True)
+        st.dataframe(_squad_p[_disp_cols], use_container_width=True, hide_index=True)
 
     with st.expander("All players by value"):
-        _all = _players[["name", "position", "value"]].copy()
-        st.dataframe(_all.sort_values("value", ascending=False), use_container_width=True, hide_index=True)
+        _disp_cols_all = ["name", "position", "value"]
+        if "value_change_pct" in _players.columns:
+            _disp_cols_all.append("value_change_pct")
+        from logic.recommendations import parse_value
+        _all = _players[_disp_cols_all].copy()
+        _all["_sort"] = _all["value"].apply(lambda v: parse_value(str(v)))
+        _all = _all.sort_values("_sort", ascending=False).drop("_sort", axis=1)
+        st.dataframe(_all, use_container_width=True, hide_index=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -351,7 +377,7 @@ with tab_form:
         help="Last N completed matches before the World Cup for each team.",
     )
 
-    if st.button("📊 Fetch pre-tournament form (all 48 teams)", type="primary"):
+    if st.button("Fetch pre-tournament form (all 48 teams)", type="primary"):
         progress_bar = st.progress(0.0, text="Starting…")
         status_text  = st.empty()
 
@@ -374,7 +400,7 @@ with tab_form:
         status_text.empty()
 
         if errors:
-            with st.expander(f"⚠️ {len(errors)} teams failed"):
+            with st.expander(f"{len(errors)} teams failed"):
                 for e in errors:
                     st.warning(e)
 
@@ -407,7 +433,7 @@ with tab_form:
             )
 
     st.divider()
-    with st.expander("ℹ️ About this data"):
+    with st.expander("About this data"):
         st.markdown("""
 **What gets scraped:** Flashscore team result pages — the last 5 completed matches
 before June 11, 2026 for every team that appears in the WC 2026 group stage.
@@ -435,7 +461,7 @@ with tab_fdorg:
 
     stored_key = load_api_key()
     with st.expander(
-        "Configure API key" if not stored_key else "✅  API key configured  (click to change)",
+        "Configure API key" if not stored_key else "API key configured  (click to change)",
         expanded=not stored_key,
     ):
         st.markdown(
@@ -453,12 +479,12 @@ with tab_fdorg:
         )
         cs, ct = st.columns([1, 2])
         with cs:
-            if st.button("💾 Save key"):
+            if st.button("Save key"):
                 save_api_key(key_input)
                 st.success("Saved.")
                 st.rerun()
         with ct:
-            if st.button("🔌 Test connection"):
+            if st.button("Test connection"):
                 with st.spinner("Connecting…"):
                     ok, msg = test_connection(key_input or stored_key)
                 (st.success if ok else st.error)(msg)
@@ -467,7 +493,7 @@ with tab_fdorg:
     st.divider()
 
     if not api_key:
-        st.warning("⚠️  Set your API key above before syncing.")
+        st.warning("Set your API key above before syncing.")
     else:
         last_sync = load_last_sync()
         if last_sync:
@@ -479,7 +505,7 @@ with tab_fdorg:
             except ValueError:
                 pass
 
-        if st.button("🔄 Sync results from football-data.org", type="primary"):
+        if st.button("Sync results from football-data.org", type="primary"):
             with st.spinner("Fetching…"):
                 try:
                     matches  = fetch_wc_matches(api_key)
