@@ -7,6 +7,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.data import load_csv, save_csv
+from utils.styles import inject_shared_css
 from utils.football_api import (
     load_api_key, save_api_key,
     load_last_sync, save_last_sync,
@@ -25,6 +26,7 @@ from utils.team_form import (
 )
 
 st.set_page_config(page_title="Live Sync", layout="wide")
+inject_shared_css()
 st.title("Live Data Sync")
 st.caption(
     "Four data sources — Flashscore for results + lineups, "

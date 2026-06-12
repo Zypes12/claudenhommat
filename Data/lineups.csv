@@ -1,26 +1,4 @@
 team,player_name,position,formation
-Mexico,Rangel,GK,4-3-3
-Mexico,Reyes,RB,4-3-3
-Mexico,Montes,CB,4-3-3
-Mexico,Vasques,CB,4-3-3
-Mexico,Gallardo,LB,4-3-3
-Mexico,Figaldo,CM,4-3-3
-Mexico,Lira,CM,4-3-3
-Mexico,Mora,CM,4-3-3
-Mexico,Alvarado,RW,4-3-3
-Mexico,Jimenez,ST,4-3-3
-Mexico,Gimenez,LW,4-3-3
-South Africa,Williams Ronwen,GK,4-3-3
-South Africa,Modiba,RB,4-3-3
-South Africa,Mbokazi,CB,4-3-3
-South Africa,Sibisi,CB,4-3-3
-South Africa,Mudau,LB,4-3-3
-South Africa,Mbatha,CM,4-3-3
-South Africa,Sithole,CM,4-3-3
-South Africa,Mokoena,CM,4-3-3
-South Africa,Appolis,RW,4-3-3
-South Africa,Foster,ST,4-3-3
-South Africa,Mofokeng,LW,4-3-3
 South Korea,Seung-Gyu,GK,4-3-3
 South Korea,Young-woo,RB,4-3-3
 South Korea,Min-Jae,CB,4-3-3
@@ -32,17 +10,6 @@ South Korea,In-Beom,CM,4-3-3
 South Korea,Kang-in,RW,4-3-3
 South Korea,Son,ST,4-3-3
 South Korea,Hwang,LW,4-3-3
-Czechia,Kovar,GK,3-4-3
-Czechia,Holes,CB,3-4-3
-Czechia,Hranac,CB,3-4-3
-Czechia,Krejci,CB,3-4-3
-Czechia,Coufal,RWB,3-4-3
-Czechia,Darida,CM,3-4-3
-Czechia,Soucek,CM,3-4-3
-Czechia,Zeleny,LWB,3-4-3
-Czechia,Sulc,RW,3-4-3
-Czechia,Schick,ST,3-4-3
-Czechia,Provod,LW,3-4-3
 Canada,Crepeau,GK,4-4-2
 Canada,Johnston,RB,4-4-2
 Canada,Luc De Fougerolles,CB,4-4-2
@@ -135,10 +102,10 @@ USA,Freese,GK,3-4-3
 USA,McKenzie,CB,3-4-3
 USA,Richards,CB,3-4-3
 USA,Ream,CB,3-4-3
-USA,Dest,RWB,3-4-3
+USA,Dest,DEF,3-4-3
 USA,Adams,CM,3-4-3
 USA,McKennie,CM,3-4-3
-USA,Robinson,LWB,3-4-3
+USA,Robinson,DEF,3-4-3
 USA,Tillman,RW,3-4-3
 USA,Balogun,ST,3-4-3
 USA,Pulisic,LW,3-4-3
@@ -154,11 +121,11 @@ Paraguay,Enciso,AM,4-2-3-1
 Paraguay,Almiron,LW,4-2-3-1
 Paraguay,Sanabria,ST,4-2-3-1
 Australia,Ryan,GK,5-4-1
-Australia,Italiano,RWB,5-4-1
+Australia,Italiano,DEF,5-4-1
 Australia,Circati,CB,5-4-1
 Australia,Souttar,CB,5-4-1
 Australia,Burgess,CB,5-4-1
-Australia,Bos,LWB,5-4-1
+Australia,Bos,DEF,5-4-1
 Australia,Irankunda,RM,5-4-1
 Australia,O’Neil,CM,5-4-1
 Australia,Irvine,CM,5-4-1
@@ -223,10 +190,10 @@ Japan,Suzuki,GK,3-4-3
 Japan,Ito,CB,3-4-3
 Japan,Watanabe,CB,3-4-3
 Japan,Taniguchi,CB,3-4-3
-Japan,Doan,RWB,3-4-3
+Japan,Doan,DEF,3-4-3
 Japan,Endo,CM,3-4-3
 Japan,Sano,CM,3-4-3
-Japan,Nakamura,LWB,3-4-3
+Japan,Nakamura,DEF,3-4-3
 Japan,Kubo,RW,3-4-3
 Japan,Ueda,ST,3-4-3
 Japan,Kamada,LW,3-4-3
@@ -429,11 +396,11 @@ Austria,Sabitzer,AM,4-2-3-1
 Austria,Gregoritsch,LW,4-2-3-1
 Austria,Arnautovic,ST,4-2-3-1
 Jordan,Abulaila,GK,5-2-3
-Jordan,Haddad,RWB,5-2-3
-Jordan,Nasib,RCB,5-2-3
+Jordan,Haddad,DEF,5-2-3
+Jordan,Nasib,DEF,5-2-3
 Jordan,Al Arab,CB,5-2-3
-Jordan,Abu Alnadi,LCB,5-2-3
-Jordan,Taha,LWB,5-2-3
+Jordan,Abu Alnadi,DEF,5-2-3
+Jordan,Taha,DEF,5-2-3
 Jordan,Jamous,CM,5-2-3
 Jordan,Al Rawabdeh,CM,5-2-3
 Jordan,Tamari,RW,5-2-3
@@ -462,11 +429,11 @@ DR Congo,Elia,RW,4-3-3
 DR Congo,Bakambu,ST,4-3-3
 DR Congo,Wissa,LW,4-3-3
 Uzbekistan,Yusupov,GK,5-2-3
-Uzbekistan,Alijonov,RWB,5-2-3
-Uzbekistan,Khusanov,RCB,5-2-3
+Uzbekistan,Alijonov,DEF,5-2-3
+Uzbekistan,Khusanov,DEF,5-2-3
 Uzbekistan,Ashmuratov,CB,5-2-3
-Uzbekistan,Abdullaev,LCB,5-2-3
-Uzbekistan,Nasrullaev,LWB,5-2-3
+Uzbekistan,Abdullaev,DEF,5-2-3
+Uzbekistan,Nasrullaev,DEF,5-2-3
 Uzbekistan,Shukurov,CM,5-2-3
 Uzbekistan,Hamrobekov,CM,5-2-3
 Uzbekistan,Fayzullaev,RW,5-2-3
@@ -516,4 +483,47 @@ Ghana,Fatawu,RW,4-2-3-1
 Ghana,Ayew,AM,4-2-3-1
 Ghana,Semenyo,LW,4-2-3-1
 Ghana,Williams Inaki,ST,4-2-3-1
-Mexico,Quiñones,RW,4-3-3
+Korea Republic,Hwang In-Beom,MID,3-4-2-1
+Korea Republic,Kim Min-Jae,DEF,3-4-2-1
+Korea Republic,Kim Seung-Gyu,GK,3-4-2-1
+Korea Republic,Lee Gi-Hyuk,MID,3-4-2-1
+Korea Republic,Lee Han-Beom,DEF,3-4-2-1
+Korea Republic,Lee Jae-Sung,MID,3-4-2-1
+Korea Republic,Lee Kang-In,MID,3-4-2-1
+Korea Republic,Lee Tae-Seok,DEF,3-4-2-1
+Korea Republic,Paik Seung-Ho,MID,3-4-2-1
+Korea Republic,Seol Young-Woo,DEF,3-4-2-1
+Korea Republic,Son Heung-Min,FWD,3-4-2-1
+Czechia,Chaloupek S.,MID,3-4-2-1
+Czechia,Coufal V.,DEF,3-4-2-1
+Czechia,Hranac R.,DEF,3-4-2-1
+Czechia,Kovar M.,GK,3-4-2-1
+Czechia,Krejci L.,MID,3-4-2-1
+Czechia,Provod L.,MID,3-4-2-1
+Czechia,Schick P.,FWD,3-4-2-1
+Czechia,Sojka A.,MID,3-4-2-1
+Czechia,Soucek T.,MID,3-4-2-1
+Czechia,Sulc P.,MID,3-4-2-1
+Czechia,Zeleny J.,MID,3-4-2-1
+Mexico,Alvarado R.,MID,4-1-4-1
+Mexico,Fidalgo A.,MID,4-1-4-1
+Mexico,Gallardo J.,DEF,4-1-4-1
+Mexico,Gutierrez B.,DEF,4-1-4-1
+Mexico,Jimenez R.,FWD,4-1-4-1
+Mexico,Lira E.,MID,4-1-4-1
+Mexico,Montes C.,DEF,4-1-4-1
+Mexico,Quinones J.,FWD,4-1-4-1
+Mexico,Rangel R.,GK,4-1-4-1
+Mexico,Reyes I.,DEF,4-1-4-1
+Mexico,Vasquez J.,DEF,4-1-4-1
+South Africa,Adams J.,MID,5-3-2
+South Africa,Foster L.,FWD,5-3-2
+South Africa,Mbokazi M.,DEF,5-3-2
+South Africa,Modiba A.,DEF,5-3-2
+South Africa,Mokoena T.,MID,5-3-2
+South Africa,Mudau K.,DEF,5-3-2
+South Africa,Okon I.,DEF,5-3-2
+South Africa,Rayners I.,MID,5-3-2
+South Africa,Sibisi N.,DEF,5-3-2
+South Africa,Sithole Y.,MID,5-3-2
+South Africa,Williams R.,GK,5-3-2

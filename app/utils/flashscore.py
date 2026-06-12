@@ -292,13 +292,15 @@ def _map_position_label(label: str) -> str:
     label = label.strip().lower()
     if label in ("goalkeeper", "gk", "g"):
         return "GK"
-    if label in ("defender", "cb", "lb", "rb", "d", "df"):
+    if label in ("defender", "cb", "lb", "rb", "rcb", "lcb", "d", "df",
+                 "rwb", "lwb", "sw", "dc", "dl", "dr"):
         return "DEF"
-    if label in ("midfielder", "cm", "dm", "am", "m", "mf"):
+    if label in ("midfielder", "cm", "dm", "am", "m", "mf", "cdm", "cam",
+                 "lm", "rm", "wm", "mc", "ml", "mr", "dml", "dmr", "aml", "amr"):
         return "MID"
-    if label in ("forward", "striker", "cf", "lw", "rw", "st", "f", "fw"):
+    if label in ("forward", "striker", "cf", "lw", "rw", "st", "f", "fw",
+                 "ss", "fw", "fwl", "fwr", "amc"):
         return "FWD"
-    # GK detectable by shirt-position pattern (position empty for most field players)
     return ""
 
 
@@ -454,9 +456,62 @@ def build_lineups_df(
                 "formation":   fmt,
             })
 
-    return pd.DataFrame(rows) if rows else pd.DataFrame(
-        columns=["team", "player_name", "position", "formation"]
-    )
+    if not rows:
+        return pd.DataFrame(columns=["team", "player_name", "position", "formation"])
+
+    df = pd.DataFrame(rows)
+    df = _enrich_lineup_positions(df)
+    return df
+
+
+def _enrich_lineup_positions(df: pd.DataFrame) -> pd.DataFrame:
+    """Fill empty position cells by looking up the player in players.csv."""
+    missing = df["position"].isna() | (df["position"].astype(str).str.strip() == "")
+    if not missing.any():
+        return df
+
+    try:
+        from pathlib import Path as _Path
+        _players_path = _Path(__file__).parent.parent.parent / "Data" / "players.csv"
+        if not _players_path.exists():
+            return df
+        _pdf = pd.read_csv(_players_path, dtype=str)
+        _pdf.columns = [c.strip().lower() for c in _pdf.columns]
+        if "name" not in _pdf.columns or "position" not in _pdf.columns:
+            return df
+        # Build lookup: full name and lastname+initial → position
+        _pos_map: dict = {}
+        _initial_map: dict = {}
+        for _n, _p in zip(_pdf["name"], _pdf["position"]):
+            _n, _p = str(_n).strip(), str(_p).strip().upper()
+            if not _p or _p == "NAN":
+                continue
+            _pos_map[_n.lower()] = _p
+            _parts = _n.split()
+            if len(_parts) >= 2:
+                _key = _parts[0].lower() + "_" + _parts[1][0].lower()
+                _initial_map.setdefault(_key, _p)
+
+        def _lookup(row):
+            if str(row["position"]).strip() not in ("", "nan"):
+                return row["position"]
+            _pn = str(row["player_name"]).strip()
+            # Exact match
+            hit = _pos_map.get(_pn.lower())
+            if hit:
+                return hit
+            # Lastname I. format
+            _pp = _pn.split()
+            if len(_pp) >= 2:
+                _k = _pp[0].lower().rstrip(".") + "_" + _pp[1].replace(".", "").lower()[:1]
+                hit = _initial_map.get(_k)
+                if hit:
+                    return hit
+            return ""
+        df["position"] = df.apply(_lookup, axis=1)
+    except Exception:
+        pass
+    return df
 
 
 def build_player_stats_df(

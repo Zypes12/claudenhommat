@@ -7,7 +7,8 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from utils.data import load_csv
+from utils.data import load_csv, load_transfer_count
+from utils.styles import inject_shared_css
 from utils.team_form import load_team_form, get_form_stats
 from logic.recommendations import (
     recommend_best_squad, load_user_squad, squad_coverage_gaps,
@@ -17,11 +18,12 @@ from logic.recommendations import (
     _enrich_with_team, BUDGET, MAX_TRANSFERS, POS_COLORS,
 )
 
-st.set_page_config(page_title="Transfers", layout="wide")
+st.set_page_config(page_title="Transfer Analysis", layout="wide")
+inject_shared_css()
 
-st.title("Transfer Planner")
+st.title("Transfer Analysis")
 
-# ── Load data first (needed for free-selection banner) ─────────────────────────
+# ── Load data ─────────────────────────────────────────────────────────────────
 players  = load_csv("players.csv")
 fixtures = load_csv("fixtures.csv")
 groups   = load_csv("groups.csv")
@@ -38,45 +40,14 @@ advance_probs = {
     for t in groups["team"].astype(str).str.strip()
 }
 
-# Determine whether we are still in the free initial selection window
-# (before the very first game of the tournament — no transfer slot is used).
 _all_dates = sorted([
     d for d in fixtures["date"].astype(str).str.strip().tolist()
     if d and d not in ("nan", "")
 ])
 tournament_start = _all_dates[0] if _all_dates else None
-today_date = datetime.date.today()
-in_free_period = bool(
-    tournament_start and today_date.isoformat() <= tournament_start
-)
 
-if in_free_period:
-    st.success(
-        f"**Initial squad selection is FREE** — adjust your starting 11 at no cost "
-        f"before the first game on **{tournament_start}**. "
-        "Your 35-transfer budget only starts counting once the tournament begins."
-    )
-else:
-    st.caption(
-        f"**{MAX_TRANSFERS} total transfers** for the whole tournament. "
-        "Transfers are free before the first game — the 35-slot budget starts after kickoff."
-    )
-
-# ── Transfer counter ───────────────────────────────────────────────────────────
-c1, c2, c3 = st.columns([1, 1, 2])
-with c1:
-    used = st.number_input("Transfers used so far", 0, MAX_TRANSFERS, 0, 1,
-                           help="Count only transfers made after the tournament started.")
+used = load_transfer_count()
 remaining = MAX_TRANSFERS - used
-with c2:
-    st.metric("Remaining", remaining,
-              delta="low" if remaining < 8 else f"{remaining} left",
-              delta_color="inverse" if remaining < 8 else "off")
-with c3:
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.progress(used / MAX_TRANSFERS, text=f"{used} / {MAX_TRANSFERS} used")
-
-st.divider()
 
 # ── Load squad: user's actual squad first, fall back to algorithm ─────────────
 with st.spinner("Loading squad…"):
@@ -92,61 +63,6 @@ if result is None:
 
 squad    = result["squad"]
 enriched = result.get("enriched_players", _enrich_with_team(players, lineups))
-today    = datetime.date.today().isoformat()
-
-# ── My Squad + Coverage Map ────────────────────────────────────────────────────
-squad_label = "My Squad" if using_user_squad else "Recommended Squad"
-st.markdown(f"## {squad_label}")
-
-s_cols = st.columns(len(squad))
-pos_order = {"GK": 0, "DEF": 1, "MID": 2, "FWD": 3}
-for col, (_, p) in zip(s_cols, squad.sort_values("position", key=lambda s: s.map(pos_order)).iterrows()):
-    pos   = str(p.get("position", "")).upper()
-    color = POS_COLORS.get(pos, "#7c3aed")
-    col.markdown(
-        f"<div style='text-align:center;border-top:3px solid {color};padding:6px 2px;'>"
-        f"<div style='font-size:9px;color:{color};font-weight:700'>{pos}</div>"
-        f"<div style='font-size:12px;font-weight:700'>{display_name(str(p.get('name','')))}</div>"
-        f"<div style='font-size:10px;color:#64748b'>{p.get('team','')}</div>"
-        f"<div style='font-size:11px;color:#38bdf8'>~{float(p.get('exp_pts',0)):.1f} pts</div>"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
-
-st.markdown("### Coverage Map")
-gaps, covered = squad_coverage_gaps(squad, fixtures)
-
-if gaps:
-    st.error(f"**{len(gaps)} gap day(s)** — no player in action: " + "  |  ".join(gaps))
-
-# Draw a compact calendar grid
-june_dates = sorted(
-    d for d in fixtures["date"].astype(str).str.strip().unique()
-    if d.startswith("2026-06")
-)
-covered_map = {date: teams for date, teams in covered}
-cal_cols = st.columns(len(june_dates))
-for col, date in zip(cal_cols, june_dates):
-    day = date[8:]  # DD
-    if date in covered_map:
-        teams_str = ", ".join(covered_map[date])
-        col.markdown(
-            f"<div style='text-align:center;background:#14532d;border-radius:6px;"
-            f"padding:4px 2px;font-size:10px'>"
-            f"<b style='color:#4ade80'>Jun {day}</b><br>"
-            f"<span style='color:#86efac;font-size:9px'>{teams_str}</span></div>",
-            unsafe_allow_html=True,
-        )
-    else:
-        col.markdown(
-            f"<div style='text-align:center;background:#7f1d1d;border-radius:6px;"
-            f"padding:4px 2px;font-size:10px'>"
-            f"<b style='color:#f87171'>Jun {day}</b><br>"
-            f"<span style='color:#fca5a5;font-size:9px'>GAP</span></div>",
-            unsafe_allow_html=True,
-        )
-
-st.divider()
 today    = datetime.date.today().isoformat()
 
 # ── Transfer strategy banner ───────────────────────────────────────────────────
@@ -169,116 +85,55 @@ WC 2026 is in North America — a 9 pm EDT kickoff on June 14 means your deadlin
 - Round of 16 → Final: save 12+ transfers for player swaps as teams get eliminated
 """)
 
-# ── Transfer schedule ──────────────────────────────────────────────────────────
-st.markdown("## Transfer Windows by Round")
-st.caption(
-    "Each day's transfer window closes before the **first kickoff of that day (Eastern Time)**. "
-    "Players playing today cannot be transferred out — their points window has opened."
+# ── Coverage Calendar ─────────────────────────────────────────────────────────
+st.markdown("## Coverage Calendar")
+st.caption("Green = at least one squad player has a game · Red = gap day (priority to fix)")
+
+gaps, covered = squad_coverage_gaps(squad, fixtures)
+if gaps:
+    st.error(f"**{len(gaps)} gap day(s) — no squad player plays:** " + "  ·  ".join(gaps))
+
+_all_fix_dates = sorted(
+    d for d in fixtures["date"].astype(str).str.strip().unique()
+    if d and d not in ("nan", "") and d >= today
 )
-
-schedule = get_transfer_schedule(squad, enriched, fixtures, groups, used, today, form=form, actual_stats=actual_stats, form_stats=form_stats, recent_form=recent_form, advance_probs=advance_probs)
-
-if not schedule:
-    st.info("No upcoming rounds found.")
-else:
-    for window in schedule:
-        label      = window["round_label"]
-        start      = window["round_start"]
-        end        = window["round_end"]
-        span       = window["round_span_days"]
-        days_start = window["days_to_start"]
-        urgency    = window["urgency"]
-        n_swaps    = window["suggested_transfers"]
-        swaps      = window["pre_round_swaps"]
-        daily      = window["daily_games"]
-
-        if days_start <= 0:
-            date_range = f"{start} → {end}  ·  **In progress** ({span}-day round)"
-        else:
-            date_range = f"{start} → {end}  ·  starts in {days_start} day{'s' if days_start != 1 else ''}"
-
-        with st.expander(
-            f"[{urgency}]  **{label}**  —  {date_range}  "
-            f"·  recommended transfers: **{n_swaps}**",
-            expanded=(days_start <= 1),
-        ):
-            uncovered = window.get("uncovered_days", [])
-            if uncovered:
-                st.error(
-                    "**Coverage gaps** — no squad player plays on: "
-                    + "  |  ".join(uncovered)
-                    + "  — priority transfer targets"
+if _all_fix_dates:
+    covered_map = {date: teams for date, teams in covered}
+    # Group into rows of 10 for readability
+    _chunk = 10
+    for _start in range(0, len(_all_fix_dates), _chunk):
+        _chunk_dates = _all_fix_dates[_start:_start + _chunk]
+        _cal_cols = st.columns(len(_chunk_dates))
+        for _col, _date in zip(_cal_cols, _chunk_dates):
+            try:
+                _d_obj = datetime.date.fromisoformat(_date)
+                _day_lbl = _d_obj.strftime("%-d %b")
+            except Exception:
+                _day_lbl = _date[5:]
+            if _date in covered_map:
+                _teams_str = "<br>".join(covered_map[_date])
+                _col.markdown(
+                    f"<div style='text-align:center;background:rgba(20,83,45,0.7);"
+                    f"border:1px solid #22c55e;border-radius:5px;padding:4px 2px;font-size:9px'>"
+                    f"<b style='color:#4ade80'>{_day_lbl}</b><br>"
+                    f"<span style='color:#86efac'>{_teams_str}</span></div>",
+                    unsafe_allow_html=True,
                 )
-
-            # Day-specific transfer suggestions
-            st.markdown("**Recommended transfers:**")
-            if swaps:
-                for s in swaps:
-                    d_away_s = s["days_until"]
-                    if d_away_s == 0:
-                        when = "**TODAY** — before first game (Eastern Time)"
-                    elif d_away_s == 1:
-                        when = "**tomorrow** before first game (Eastern Time)"
-                    else:
-                        when = f"in **{d_away_s} days** (before first game, Eastern Time)"
-                    is_gap = s["transfer_date"] in uncovered
-
-                    is_free = bool(tournament_start and s["transfer_date"] <= tournament_start)
-                    free_badge = "  — FREE (before tournament starts)" if is_free else ""
-                    st.markdown(
-                        f"Transfer {when} — `{s['transfer_date']}`"
-                        + ("  — **covers gap day**" if is_gap else "")
-                        + free_badge,
-                        unsafe_allow_html=False,
-                    )
-                    c1, c2 = st.columns(2)
-                    rebuy_note = "  ·  *Candidate to rebuy later*" if s.get("can_buy_back") else ""
-                    c1.markdown(
-                        f"**OUT:** {s['out']}  \n"
-                        f"*{s['out_team']} — no game this day*{rebuy_note}"
-                    )
-                    c2.markdown(
-                        f"**IN:** {s['in']}  \n"
-                        f"*{s['in_team']} — plays {s['transfer_date']}*  ·  "
-                        f"**~{s['day_pts']} pts**"
-                    )
-                    st.caption(s["reason"])
-                    st.markdown("---")
             else:
-                st.success("No clear gains — hold your transfers for this round.")
-
-            # Day-by-day game schedule
-            st.markdown("**Game-day schedule:**")
-            for day_info in daily:
-                d_str   = day_info["date"]
-                d_away  = day_info["days_away"]
-                games   = day_info["games"]
-
-                has_squad = any(g["squad_home"] or g["squad_away"] for g in games)
-                gap_flag = "  — NO COVERAGE" if not has_squad else ""
-
-                if d_away < 0:
-                    day_label = f"~~{d_str}~~ (played)"
-                elif d_away == 0:
-                    day_label = f"**{d_str} — TODAY**{gap_flag}"
-                else:
-                    day_label = f"{d_str}  ({d_away}d){gap_flag}"
-
-                game_lines = []
-                for g in games:
-                    h_mark = "S" if g["squad_home"] else "·"
-                    a_mark = "S" if g["squad_away"] else "·"
-                    game_lines.append(f"{h_mark}  **{g['home']}** vs **{g['away']}**  {a_mark}")
-
-                with st.container():
-                    st.markdown(f"*{day_label}*")
-                    for line in game_lines:
-                        st.markdown(f"&nbsp;&nbsp;&nbsp;{line}", unsafe_allow_html=True)
-            st.caption("S = squad player in this team  ·  NO COVERAGE = gap day")
+                _col.markdown(
+                    f"<div style='text-align:center;background:rgba(127,29,29,0.7);"
+                    f"border:1px solid #ef4444;border-radius:5px;padding:4px 2px;font-size:9px'>"
+                    f"<b style='color:#f87171'>{_day_lbl}</b><br>"
+                    f"<span style='color:#fca5a5'>GAP</span></div>",
+                    unsafe_allow_html=True,
+                )
 
 st.divider()
 
 # ── Full transfer schedule (flat table) ───────────────────────────────────────
+with st.spinner("Computing transfer schedule…"):
+    schedule = get_transfer_schedule(squad, enriched, fixtures, groups, used, today, form=form, actual_stats=actual_stats, form_stats=form_stats, recent_form=recent_form, advance_probs=advance_probs)
+
 st.markdown("## Full Transfer Schedule")
 st.caption(
     "Every recommended transfer across all rounds in one table. "

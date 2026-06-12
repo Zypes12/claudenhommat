@@ -17,6 +17,8 @@ env/
 
 # Local API keys — never commit
 Data/api_config.json
+api_key.env
+*.env
 
 # macOS
 .DS_Store

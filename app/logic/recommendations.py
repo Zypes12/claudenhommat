@@ -1442,6 +1442,12 @@ def get_transfer_schedule(
     # Lower number = transfer out first (strategy: FWD/MID upgrades > DEF > GK)
     _POS_PRIORITY = {"FWD": 0, "MID": 1, "DEF": 2, "GK": 3}
 
+    # Global state carries across rounds so the same player is never suggested twice
+    global_running_sq  = sq_names.copy()
+    global_running_bud = int(budget_used)
+    global_seen_out:  set[str] = set()
+    global_seen_in:   set[str] = set()
+
     schedule = []
     for round_key in sorted(rounds.keys(), key=lambda k: min(rounds[k]["dates_games"].keys())):
         dates_games = rounds[round_key]["dates_games"]
@@ -1494,12 +1500,10 @@ def get_transfer_schedule(
             if not squad_df["team"].astype(str).str.strip().isin(teams_chk).any():
                 uncovered_days.append(d_str)
 
-        # Greedy sequential swap collection.
-        # Process coverage-gap days first (most urgent), then remaining days chronologically.
-        # Each accepted swap updates running budget + squad membership so chain effects
-        # (transfer X freeing budget for transfer Y) are modeled correctly.
-        running_budget = int(budget_used)
-        running_sq_names = sq_names.copy()
+        # Greedy sequential swap collection — inherits global state so a player
+        # already transferred out in a prior round is never suggested again.
+        running_budget   = global_running_bud
+        running_sq_names = global_running_sq.copy()
         seen_out_r: set[str] = set()
         seen_in_r:  set[str] = set()
         swaps: list[dict] = []
@@ -1539,7 +1543,7 @@ def get_transfer_schedule(
             avail_today = all_players[
                 all_players["team"].astype(str).str.strip().isin(teams_today_r) &
                 ~all_players["name"].astype(str).str.strip().isin(running_sq_names) &
-                ~all_players["name"].astype(str).str.strip().isin(seen_in_r)
+                ~all_players["name"].astype(str).str.strip().isin(seen_in_r | global_seen_in)
             ].copy()
             if avail_today.empty:
                 continue
@@ -1560,7 +1564,7 @@ def get_transfer_schedule(
                 in_cands  = avail_today[avail_today["position"].str.upper() == pos]
                 out_cands = sq_not_playing[
                     (sq_not_playing["position"].str.upper() == pos) &
-                    ~sq_not_playing["name"].astype(str).str.strip().isin(seen_out_r)
+                    ~sq_not_playing["name"].astype(str).str.strip().isin(seen_out_r | global_seen_out)
                 ]
 
                 if in_cands.empty or out_cands.empty:
@@ -1688,6 +1692,14 @@ def get_transfer_schedule(
 
         # Restore chronological order for the UI (gap days were front-loaded for priority)
         swaps.sort(key=lambda x: x["transfer_date"])
+
+        # Propagate this round's accepted swaps into global state for next rounds
+        for _sw in swaps:
+            global_seen_out.add(_sw["out"])
+            global_seen_in.add(_sw["in"])
+        global_running_sq.clear()
+        global_running_sq.update(running_sq_names)
+        global_running_bud = running_budget
 
         # Day-by-day breakdown with squad markers
         daily_games = []

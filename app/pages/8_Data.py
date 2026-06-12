@@ -6,8 +6,10 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.data import load_csv, save_csv
+from utils.styles import inject_shared_css
 
 st.set_page_config(page_title="Data", layout="wide")
+inject_shared_css()
 st.title("Data Management")
 st.caption("Edit any table and press Save. Changes are written to the CSV files in Data/.")
 

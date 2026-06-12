@@ -1,4 +1,5 @@
 import json
+from typing import Optional
 import pandas as pd
 from pathlib import Path
 
@@ -83,14 +84,49 @@ def save_csv(filename: str, df: pd.DataFrame) -> None:
 _TRANSFER_STATE = DATA_DIR / "transfer_state.json"
 
 
-def load_transfer_count() -> int:
+def _load_state() -> dict:
     if not _TRANSFER_STATE.exists():
-        return 0
+        return {"transfers_used": 0, "history": []}
     try:
-        return int(json.loads(_TRANSFER_STATE.read_text()).get("transfers_used", 0))
+        s = json.loads(_TRANSFER_STATE.read_text())
+        if "history" not in s:
+            s["history"] = []
+        return s
     except Exception:
-        return 0
+        return {"transfers_used": 0, "history": []}
+
+
+def _save_state(state: dict) -> None:
+    _TRANSFER_STATE.write_text(json.dumps(state))
+
+
+def load_transfer_count() -> int:
+    return int(_load_state().get("transfers_used", 0))
 
 
 def save_transfer_count(n: int) -> None:
-    _TRANSFER_STATE.write_text(json.dumps({"transfers_used": int(n)}))
+    s = _load_state()
+    s["transfers_used"] = int(n)
+    _save_state(s)
+
+
+def record_transfer(out_name: str, in_name: str) -> None:
+    s = _load_state()
+    s["transfers_used"] = int(s.get("transfers_used", 0)) + 1
+    s["history"].append({"out": out_name, "in": in_name})
+    _save_state(s)
+
+
+def get_last_transfer() -> Optional[dict]:
+    history = _load_state().get("history", [])
+    return history[-1] if history else None
+
+
+def undo_last_transfer() -> Optional[dict]:
+    s = _load_state()
+    if not s.get("history"):
+        return None
+    entry = s["history"].pop()
+    s["transfers_used"] = max(0, int(s.get("transfers_used", 1)) - 1)
+    _save_state(s)
+    return entry
