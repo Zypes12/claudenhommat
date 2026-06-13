@@ -245,7 +245,9 @@ transfers = recommend_transfers(squad, enriched, fixtures, groups, n_suggestions
 
 budget_used      = transfers.get("budget_used", 0)
 budget_total     = transfers.get("budget_total", BUDGET)
-budget_remaining = budget_total - budget_used
+# Clamp to 0: if squad prices rose above BUDGET, available cash is 0 not negative.
+# The sold player's full current price is added on top — so price rises help budget.
+budget_remaining = max(0, budget_total - budget_used)
 
 out_list    = transfers.get("out", [])
 in_list_all = transfers.get("in", [])
@@ -256,7 +258,7 @@ _out_labels = [
     for s in out_list
 ]
 
-_avail = budget_remaining  # default; updated below if user selects a player
+_avail = budget_remaining  # updated below once user selects a player to sell
 
 def fmt_list(lst, show_next_game=False):
     rows = []

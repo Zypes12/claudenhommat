@@ -1768,44 +1768,13 @@ def get_transfer_schedule(
                 worst_out = out_cands.nlargest(1, "sell_score").iloc[0]
 
                 out_val_freed = parse_value(worst_out.get("value", 0))
-                budget_slack_r = BUDGET - running_budget + out_val_freed
+                # Clamp to 0: if squad prices have risen above BUDGET, available cash
+                # is 0 (not negative). The sold player's current price is always fully
+                # added on top so price rises DO increase budget when selling.
+                budget_slack_r = max(0, BUDGET - running_budget) + out_val_freed
                 in_cands_ok = in_cands[in_cands["value"].apply(parse_value) <= budget_slack_r].copy()
                 if in_cands_ok.empty:
                     continue
-
-                # Concentration hard filter for IN candidates.
-                # Hard limits (adding one more would exceed):
-                #   KO stage: 2 — one elimination wipes the cluster
-                #   Late group (proximity ≥ 0.7) + shaky team (<60% adv): 2
-                #   Group stage otherwise: 4 (truly extreme; 3 is soft, not hard)
-                def _hard_limit(team_str: str) -> int:
-                    if _round_is_ko:
-                        return 2
-                    if knockout_proximity_t >= 0.7:
-                        t_adv = float((advance_probs or {}).get(team_str, 0.5))
-                        if t_adv < 0.60:
-                            return 2
-                    return 4   # group stage soft ceiling — never a 5th from same team
-
-                in_cands_ok = in_cands_ok[
-                    in_cands_ok["team"].astype(str).str.strip().map(
-                        lambda t: _team_counts.get(t, 0) < _hard_limit(t)
-                    )
-                ]
-                if in_cands_ok.empty:
-                    continue
-
-                # Dead rubber filter: if a team is already eliminated (advance_prob == 0)
-                # their remaining group fixtures involve heavy rotation and are worthless.
-                # Only apply in group stage — knockout eliminates speak for themselves.
-                if not _round_is_ko:
-                    in_cands_ok = in_cands_ok[
-                        in_cands_ok["team"].astype(str).str.strip().map(
-                            lambda t: float((advance_probs or {}).get(t, 0.5)) > 0.0
-                        )
-                    ]
-                    if in_cands_ok.empty:
-                        continue
 
                 # Score IN candidates combining day_pts with tournament survival probability.
                 # Gap days: coverage is the priority — use raw pts only.
@@ -1860,6 +1829,32 @@ def get_transfer_schedule(
                         * (1.0 + 0.02 * (in_cands_ok["_rem_games"] - 1).clip(lower=0))
                     )
 
+                # Soft penalties applied to _in_score — nothing hard-blocks a transfer,
+                # but these factors make less ideal options sink to the bottom.
+                def _in_score_mult(team_str: str) -> float:
+                    t   = str(team_str).strip()
+                    m   = 1.0
+                    # Dead rubber: team already eliminated → score shrinks to 5%
+                    if not _round_is_ko:
+                        adv = float((advance_probs or {}).get(t, 0.5))
+                        if adv == 0.0:
+                            m *= 0.05
+                    # Concentration: each player above threshold halves the score
+                    # (group) or reduces it by 60% (KO) — still surfaceable if
+                    # they're dramatically better than alternatives
+                    count  = _team_counts.get(t, 0)
+                    excess = max(0, count - _max_same_team + 1)
+                    if excess > 0:
+                        decay = 0.50 if _round_is_ko else 0.70
+                        m *= max(0.05, decay ** excess)
+                    return m
+
+                in_cands_ok = in_cands_ok.copy()
+                in_cands_ok["_in_score"] = in_cands_ok.apply(
+                    lambda r: r["_in_score"] * _in_score_mult(r.get("team", "")),
+                    axis=1,
+                )
+
                 best_in = in_cands_ok.nlargest(1, "_in_score").iloc[0]
                 day_pts_in = float(best_in["day_pts"])
 
@@ -1897,25 +1892,9 @@ def get_transfer_schedule(
                     if _deferred:
                         continue
 
-                # Gain threshold: scales with transfers remaining.
-                # Gap days bypass — any coverage beats none.
-                if day_pts_in < min_gain_threshold and not is_gap:
-                    continue
-
-                # Extra barrier for risky buys.
-                # The survival-probability cutoff rises as we approach / enter knockouts:
-                #   early group stage → 0.45 (only block near-certain eliminations)
-                #   late group stage  → 0.65 (block borderline teams)
-                #   knockout rounds   → 0.65 (use KO win prob — don't buy a team likely
-                #                            to lose their very next match)
+                # Survival context for notes (not a blocker — communicated via reason string)
                 in_adv_prelim = float(best_in.get("_in_adv", 0.5))
                 _risky_cutoff = 0.45 + 0.20 * knockout_proximity_t   # 0.45 → 0.65
-                if not is_gap and in_adv_prelim < _risky_cutoff:
-                    extra_factor = 1.0 + (_risky_cutoff - in_adv_prelim) * 0.8
-                    if _round_is_ko:
-                        extra_factor = max(extra_factor, 1.6)  # knockout buys need clear value
-                    if day_pts_in < min_gain_threshold * extra_factor:
-                        continue
 
                 out_avg = float(worst_out.get("exp_pts", 0))
                 pts_gain = round(day_pts_in - out_avg, 1)
