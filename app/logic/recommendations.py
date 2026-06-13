@@ -1260,19 +1260,55 @@ def recommend_transfers(
     except (ValueError, TypeError):
         pass
 
+    # Gap penalty: players with a big gap between their next two fixtures are
+    # easier sell targets — even if they play soon, the gap after hurts long-term.
+    # Each day beyond a 5-day gap between game N and game N+1 reduces _protected_pts.
+    gap_penalty: dict[str, float] = {}
+    try:
+        _today_iso2 = today_str or _dt.date.today().isoformat()
+        _unplayed_fx = fixtures[
+            fixtures["date"].astype(str).str.strip() >= _today_iso2
+        ].copy()
+        for _t in squad_pos["team"].astype(str).str.strip().unique():
+            if not _t or _t in gap_penalty:
+                continue
+            _t_fx = _unplayed_fx[
+                (_unplayed_fx["home_team"].astype(str).str.strip() == _t) |
+                (_unplayed_fx["away_team"].astype(str).str.strip() == _t)
+            ].sort_values("date")
+            if len(_t_fx) < 2:
+                gap_penalty[_t] = 0.0
+                continue
+            try:
+                _d1 = _dt.date.fromisoformat(str(_t_fx.iloc[0]["date"]).strip())
+                _d2 = _dt.date.fromisoformat(str(_t_fx.iloc[1]["date"]).strip())
+                _gap = max(0, (_d2 - _d1).days - 1)
+                gap_penalty[_t] = max(0.0, _gap - 5) * 0.25
+            except (ValueError, TypeError):
+                gap_penalty[_t] = 0.0
+    except Exception:
+        pass
+
     squad_pos["_protected_pts"] = squad_pos.apply(
-        lambda r: float(r.get("exp_pts", 0)) + near_bonus.get(str(r.get("name", "")), 0.0),
+        lambda r: (
+            float(r.get("exp_pts", 0))
+            + near_bonus.get(str(r.get("name", "")), 0.0)
+            - gap_penalty.get(str(r.get("team", "")).strip(), 0.0)
+        ),
         axis=1,
     )
     worst_out = squad_pos.nsmallest(n_suggestions, "_protected_pts")
 
-    # Budget constraint: in-player must fit within cap after selling the weakest out-player.
+    # Budget: use the MAXIMUM possible sell value so the in-list covers all
+    # plausible sell scenarios. The UI will re-filter per selected out player.
     budget_used = squad_budget_used(squad_df)
-    min_out_val = worst_out["value"].apply(parse_value).min() if not worst_out.empty else 0
-    budget_slack = BUDGET - budget_used + min_out_val
+    max_out_val = worst_out["value"].apply(parse_value).max() if not worst_out.empty else 0
+    budget_slack = BUDGET - budget_used + max_out_val
     affordable = available[available["value"].apply(parse_value) <= budget_slack]
 
-    top_in = affordable.nlargest(n_suggestions, "exp_pts")
+    # Return a wider pool so the UI can re-filter by whichever out player is selected.
+    _pool_size = min(max(n_suggestions * 4, 20), len(affordable))
+    top_in = affordable.nlargest(_pool_size, "exp_pts")
 
     _today_iso = today_str or import_dt.date.today().isoformat() if (import_dt := __import__("datetime")) else ""
 
@@ -1320,8 +1356,10 @@ def recommend_transfers(
         }
 
     return {
-        "out": [row_to_dict(r) for _, r in worst_out.iterrows()],
-        "in":  [row_to_dict(r) for _, r in top_in.iterrows()],
+        "out":          [row_to_dict(r) for _, r in worst_out.iterrows()],
+        "in":           [row_to_dict(r) for _, r in top_in.iterrows()],
+        "budget_used":  int(budget_used),
+        "budget_total": BUDGET,
     }
 
 
@@ -1687,6 +1725,22 @@ def get_transfer_schedule(
                         return compute_ko_win_prob(team_str, fixtures, groups, advance_probs)
                     return float((advance_probs or {}).get(team_str, 0.5))
 
+                def _gap_after_next(team_str: str) -> int:
+                    """Days between team's next two fixtures (0 if fewer than 2 remain)."""
+                    _t = str(team_str).strip()
+                    _up = unplayed[
+                        (unplayed["home_team"].astype(str).str.strip() == _t) |
+                        (unplayed["away_team"].astype(str).str.strip() == _t)
+                    ].sort_values("date")
+                    if len(_up) < 2:
+                        return 0
+                    try:
+                        _d1 = datetime.date.fromisoformat(str(_up.iloc[0]["date"]).strip())
+                        _d2 = datetime.date.fromisoformat(str(_up.iloc[1]["date"]).strip())
+                        return max(0, (_d2 - _d1).days - 1)
+                    except (ValueError, TypeError):
+                        return 0
+
                 # Concentration sell pressure: a nudge, not a veto.
                 # Individual performance (-exp_pts) stays the dominant term.
                 # Weight scales with phase and how many transfers remain:
@@ -1705,6 +1759,9 @@ def get_transfer_schedule(
                         + max(0.0, 1.0 - _survival_prob(str(r.get("team", "")).strip())) * 5.0
                         # Concentration nudge — only kicks in above the per-phase limit
                         + max(0.0, _team_counts.get(str(r.get("team", "")).strip(), 0) - _max_same_team) * _conc_weight
+                        # Gap penalty: players with a big gap between next two games are
+                        # easier to move on — each day beyond a 5-day gap adds 0.15
+                        + max(0.0, _gap_after_next(str(r.get("team", "")).strip()) - 5) * 0.15
                     ),
                     axis=1,
                 )
@@ -1927,6 +1984,8 @@ def get_transfer_schedule(
                     "in_advance_prob": round(in_adv, 2),
                     "is_short_term":   is_short_term,
                     "is_ko_round":     _round_is_ko,
+                    "out_price":       int(out_val_freed),
+                    "in_price":        int(in_val),
                     "reason":          (
                         f"Plays {d_str}  ·  ~{day_pts_in:.1f} pts today  ·  "
                         f"out-player avg {out_avg:.1f}{value_note}{adv_note}{sell_intent_note}{conc_note}"

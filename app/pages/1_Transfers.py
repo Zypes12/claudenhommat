@@ -15,8 +15,30 @@ from logic.recommendations import (
     recommend_transfers, get_transfer_schedule,
     fixture_difficulty, difficulty_label, display_name,
     compute_actual_stats, compute_recent_form, compute_group_standings, compute_advance_probability,
-    _enrich_with_team, BUDGET, MAX_TRANSFERS, POS_COLORS,
+    _enrich_with_team, BUDGET, MAX_TRANSFERS, POS_COLORS, parse_value,
 )
+
+
+def fmt_price(val) -> str:
+    p = parse_value(val)
+    if p >= 1_000_000:
+        return f"{p / 1_000_000:.2f}M€"
+    if p >= 1_000:
+        return f"{p / 1_000:.0f}k€"
+    return f"{int(p)}€" if p else "—"
+
+
+def _fmt_price_delta(in_price, out_price) -> str:
+    delta = int(parse_value(in_price)) - int(parse_value(out_price))
+    if delta == 0:
+        return "="
+    sign = "+" if delta > 0 else ""
+    if abs(delta) >= 1_000_000:
+        return f"{sign}{delta / 1_000_000:.2f}M€"
+    if abs(delta) >= 1_000:
+        return f"{sign}{delta / 1_000:.0f}k€"
+    return f"{sign}{delta}€"
+
 
 st.set_page_config(page_title="Transfer Analysis", layout="wide")
 inject_shared_css()
@@ -172,8 +194,11 @@ for window in schedule:
             "Pos":       s["position"],
             "OUT":       s["out"],
             "OUT Team":  s["out_team"],
+            "OUT €":     fmt_price(s.get("out_price", 0)),
             "IN":        s["in"],
             "IN Team":   s["in_team"],
+            "IN €":      fmt_price(s.get("in_price", 0)),
+            "Δ€":        _fmt_price_delta(s.get("in_price", 0), s.get("out_price", 0)),
             "Day pts":   s["day_pts"],
             "Net":       f"{s['pts_gain']:+.1f}",
             "Gap":       "GAP" if s.get("is_gap_day") else "",
@@ -209,7 +234,20 @@ n = cb.slider("Suggestions per side", 3, 10, 5)
 pf = None if pos_filter == "All" else pos_filter
 transfers = recommend_transfers(squad, enriched, fixtures, groups, n_suggestions=n, position_filter=pf, form=form, actual_stats=actual_stats, form_stats=form_stats, today_str=today, recent_form=recent_form)
 
-col_out, col_in = st.columns(2)
+budget_used      = transfers.get("budget_used", 0)
+budget_total     = transfers.get("budget_total", BUDGET)
+budget_remaining = budget_total - budget_used
+
+out_list    = transfers.get("out", [])
+in_list_all = transfers.get("in", [])
+
+# Build selectbox labels for out players
+_out_labels = [
+    f"{display_name(s['name'])}  ({s['position']}, {fmt_price(s.get('value', 0))})"
+    for s in out_list
+]
+
+_avail = budget_remaining  # default; updated below if user selects a player
 
 def fmt_list(lst, show_next_game=False):
     rows = []
@@ -218,6 +256,7 @@ def fmt_list(lst, show_next_game=False):
             "Player": display_name(s["name"]),
             "Pos":    s["position"],
             "Team":   s.get("team", "—"),
+            "Price":  fmt_price(s.get("value", 0)),
             "Pts/g":  s["exp_pts"],
         }
         if show_next_game:
@@ -228,23 +267,56 @@ def fmt_list(lst, show_next_game=False):
         rows.append(row)
     return pd.DataFrame(rows) if rows else pd.DataFrame()
 
+col_out, col_in = st.columns(2)
+
 with col_out:
     st.markdown("#### Weakest in current squad")
-    st.caption("Ranked by 3-game average — lower = first to consider selling.")
-    df = fmt_list(transfers.get("out", []))
-    if not df.empty:
-        st.dataframe(df, use_container_width=True, hide_index=True)
+    st.caption(
+        "Ranked by 3-game average — lower = first to consider selling.  "
+        "Also penalises players with a large gap after their next game."
+    )
+    df_out = fmt_list(out_list)
+    if not df_out.empty:
+        st.dataframe(df_out, use_container_width=True, hide_index=True)
     else:
         st.info("No candidates.")
 
+    if _out_labels:
+        _sel_label = st.selectbox(
+            "Simulate selling:",
+            _out_labels,
+            key="explorer_sell_select",
+        )
+        _sel_idx   = _out_labels.index(_sel_label)
+        _sel_player = out_list[_sel_idx]
+        _sell_val   = parse_value(_sel_player.get("value", 0))
+        _avail      = budget_remaining + _sell_val
+        _new_sq_val = budget_used - _sell_val
+        st.metric(
+            "Budget available after sale",
+            fmt_price(_avail),
+            delta=f"Squad value: {fmt_price(budget_used)} → {fmt_price(_new_sq_val)}",
+        )
+
 with col_in:
+    _affordable_in = [
+        s for s in in_list_all
+        if parse_value(s.get("value", 0)) <= _avail
+    ][:n]
+    _total_affordable = sum(
+        1 for s in in_list_all if parse_value(s.get("value", 0)) <= _avail
+    )
     st.markdown("#### Best available")
-    st.caption("Ranked by next-fixture expected pts — reflects who is worth buying RIGHT NOW.")
-    df = fmt_list(transfers.get("in", []), show_next_game=True)
-    if not df.empty:
-        st.dataframe(df, use_container_width=True, hide_index=True)
+    st.caption(
+        f"Affordable after selling selected player — {_total_affordable} options, "
+        f"showing top {len(_affordable_in)}.  "
+        "Ranked by next-fixture expected pts."
+    )
+    df_in = fmt_list(_affordable_in, show_next_game=True)
+    if not df_in.empty:
+        st.dataframe(df_in, use_container_width=True, hide_index=True)
     else:
-        st.info("No candidates.")
+        st.info("No affordable candidates after selling selected player.")
 
 st.divider()
 
