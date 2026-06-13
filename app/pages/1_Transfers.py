@@ -19,17 +19,26 @@ from logic.recommendations import (
 )
 
 
+def _to_euros(val) -> float:
+    """Safely convert any price representation to a float in euros."""
+    if isinstance(val, (int, float)):
+        return float(val)
+    return parse_value(val)   # handles "275 000 €" strings from CSV
+
+
 def fmt_price(val) -> str:
-    p = parse_value(val)
+    p = _to_euros(val)
+    if not p:
+        return "—"
     if p >= 1_000_000:
         return f"{p / 1_000_000:.2f}M€"
     if p >= 1_000:
         return f"{p / 1_000:.0f}k€"
-    return f"{int(p)}€" if p else "—"
+    return f"{int(p)}€"
 
 
 def _fmt_price_delta(in_price, out_price) -> str:
-    delta = int(parse_value(in_price)) - int(parse_value(out_price))
+    delta = int(_to_euros(in_price)) - int(_to_euros(out_price))
     if delta == 0:
         return "="
     sign = "+" if delta > 0 else ""
@@ -289,7 +298,7 @@ with col_out:
         )
         _sel_idx   = _out_labels.index(_sel_label)
         _sel_player = out_list[_sel_idx]
-        _sell_val   = parse_value(_sel_player.get("value", 0))
+        _sell_val   = int(parse_value(_sel_player.get("value", 0)))
         _avail      = budget_remaining + _sell_val
         _new_sq_val = budget_used - _sell_val
         st.metric(
